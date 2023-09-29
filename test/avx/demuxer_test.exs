@@ -3,7 +3,7 @@ defmodule AVx.DemuxerTest do
 
   alias AVx.{Demuxer, Packet}
 
-  @input "/Users/dmorn/projects/video-taxi-pepe-demo/test/data/babylon-30s-talk.mp4"
+  @input "test/data/safari.mp4"
 
   @tag :tmp_dir
   test "demuxes aac track", %{tmp_dir: tmp_dir} do

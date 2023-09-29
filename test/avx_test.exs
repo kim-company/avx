@@ -4,11 +4,11 @@ defmodule AVxTest do
   alias AVx.{Demuxer, Decoder}
 
   @inputs [
-    "test/data/safari.mp4",
-    "/Users/dmorn/Downloads/multi-lang.mp4",
-    "/Users/dmorn/projects/video-taxi-pepe-demo/test/data/babylon-30s-talk.mp4",
-    "/Users/dmorn/projects/video-taxi-pepe-demo/test/data/babylon-30s-talk.mkv",
-    "/Users/dmorn/projects/video-taxi-pepe-demo/test/data/babylon-30s-talk.ogg"
+    "test/data/safari.mp4"
+    # "/Users/dmorn/Downloads/multi-lang.mp4",
+    # "/Users/dmorn/projects/video-taxi-pepe-demo/test/data/babylon-30s-talk.mp4",
+    # "/Users/dmorn/projects/video-taxi-pepe-demo/test/data/babylon-30s-talk.mkv",
+    # "/Users/dmorn/projects/video-taxi-pepe-demo/test/data/babylon-30s-talk.ogg"
   ]
 
   for input <- @inputs do
