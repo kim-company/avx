@@ -16,7 +16,7 @@ defmodule AVx.Demuxer do
   ]
 
   @type input :: any()
-  @type read :: (input(), size :: pos_integer -> {any(), :eof | iodata()})
+  @type read :: (input(), size :: pos_integer -> {:eof | iodata(), input()})
   @type close :: (input() -> :ok)
 
   @type codec_type :: :audio | :video
