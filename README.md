@@ -63,9 +63,8 @@ decoder
 And that's it. Compared to using the `ffmpeg` executable directly, here you have access
 to every single packet, which you can re-route, manipulate and process at will.
 
-This library is suitable as standalone or inside the elements of a [membrane]
-(https://github.com/membraneframework) pipeline for more complex setups (video
-mixers with dynamic inputs, WebRTC rooms, ...)
+This library is suitable as standalone or inside the elements of a [membrane](https://github.com/membraneframework)
+pipeline for more complex setups (video mixers with dynamic inputs, WebRTC rooms, ...)
 
 ## Performance
 Nothing serious in here for now, but to give an idea:
