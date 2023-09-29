@@ -49,4 +49,8 @@ defmodule AVx.NIF do
   def packet_stream_index(_packet) do
     raise "NIF packet_stream_index/1 not implemented"
   end
+
+  def unpack_packet(_packet) do
+    raise "NIF unpack_packet/1 not implemented"
+  end
 end

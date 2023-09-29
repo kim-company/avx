@@ -13,4 +13,8 @@ defmodule AVx.Packet do
   def stream_index(packet) do
     AVx.NIF.packet_stream_index(packet.ref)
   end
+
+  def unpack(packet) do
+    AVx.NIF.unpack_packet(packet.ref)
+  end
 end

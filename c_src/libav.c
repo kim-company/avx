@@ -286,6 +286,36 @@ ERL_NIF_TERM demuxer_read_packet(ErlNifEnv *env, int argc,
   return enif_make_tuple2(env, enif_make_atom(env, "ok"), res_term);
 }
 
+int get_packet(ErlNifEnv *env, ERL_NIF_TERM term, AVPacket **packet) {
+  AVPacket **packet_res;
+  int ret;
+
+  ret = enif_get_resource(env, term, PACKET_RES_TYPE, (void *)&packet_res);
+  *packet = *packet_res;
+
+  return ret;
+}
+
+ERL_NIF_TERM unpack_packet(ErlNifEnv *env, int argc,
+                           const ERL_NIF_TERM argv[]) {
+  AVPacket *packet;
+  ERL_NIF_TERM map, data;
+
+  get_packet(env, argv[0], &packet);
+
+  void *ptr = enif_make_new_binary(env, packet->size, &data);
+  memcpy(ptr, packet->data, packet->size);
+
+  map = enif_make_new_map(env);
+  enif_make_map_put(env, map, enif_make_atom(env, "pts"),
+                    enif_make_long(env, packet->pts), &map);
+  enif_make_map_put(env, map, enif_make_atom(env, "dts"),
+                    enif_make_long(env, packet->dts), &map);
+  enif_make_map_put(env, map, enif_make_atom(env, "data"), data, &map);
+
+  return map;
+}
+
 ERL_NIF_TERM demuxer_streams(ErlNifEnv *env, int argc,
                              const ERL_NIF_TERM argv[]) {
   DemuxerCtx *ctx;
@@ -506,16 +536,6 @@ ERL_NIF_TERM decoder_stream_format(ErlNifEnv *env, int argc,
   return map;
 }
 
-int get_packet(ErlNifEnv *env, ERL_NIF_TERM term, AVPacket **packet) {
-  AVPacket **packet_res;
-  int ret;
-
-  ret = enif_get_resource(env, term, PACKET_RES_TYPE, (void *)&packet_res);
-  *packet = *packet_res;
-
-  return ret;
-}
-
 ERL_NIF_TERM packet_stream_index(ErlNifEnv *env, int argc,
                                  const ERL_NIF_TERM argv[]) {
   AVPacket *packet;
@@ -690,6 +710,7 @@ static ErlNifFunc nif_funcs[] = {
     {"decoder_add_data", 2, decoder_add_data},
     // General
     {"unpack_frame", 1, unpack_frame},
+    {"unpack_packet", 1, unpack_packet},
     {"packet_stream_index", 1, packet_stream_index},
 };
 
