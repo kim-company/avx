@@ -1,5 +1,5 @@
 defmodule AVx.Demuxer do
-  alias AVx.NIF
+  alias AVx.{NIF, Packet}
 
   @schema [
     probe_size: [
@@ -29,11 +29,10 @@ defmodule AVx.Demuxer do
           codec_params: reference()
         }
 
-  # TODO typespecs for stream
-
   @type t :: %__MODULE__{demuxer: reference(), input: input(), eof: map()}
   defstruct [:demuxer, :input, eof: %{input: false, demuxer: false}]
 
+  @spec new!(Keyword.t()) :: t()
   def new!(opts) do
     opts = NimbleOptions.validate!(opts, @schema)
     %__MODULE__{demuxer: NIF.demuxer_alloc_context(opts[:probe_size]), input: opts[:input]}
@@ -74,8 +73,15 @@ defmodule AVx.Demuxer do
   @doc """
   Returns the packets of the selected `stream_indexes`. After using this function,
   the demuxer is left in a unusable state and hence must be discarded.
+
+  Returns an enumerable of AVx.Packet.
   """
+  @spec consume_packets(t(), [pos_integer()], read(), close()) :: Enumerable.t()
   def consume_packets(state, stream_indexes, read, close) do
+    # -1 is used as an indicator for the last packet, which must
+    # be delivered to the demuxer to put it into drain mode.
+    accepted_streams = stream_indexes ++ [-1]
+
     # TODO error handling?
     Stream.resource(
       fn -> state end,
@@ -91,20 +97,14 @@ defmodule AVx.Demuxer do
             {:demand, demand} ->
               {[], read(state, read, demand)}
 
-            {:ok, packet} ->
-              {[packet], state}
+            {:ok, ref} ->
+              {[AVx.Packet.new(ref)], state}
           end
       end,
       fn state -> close.(state.input) end
     )
-    |> Stream.filter(fn
-      nil -> true
-      packet -> NIF.packet_stream_index(packet) in stream_indexes
-    end)
-    |> Stream.map(fn
-      nil -> {-1, nil}
-      packet -> {NIF.packet_stream_index(packet), packet}
-    end)
+    |> Stream.filter(fn packet -> Packet.stream_index(packet) in accepted_streams end)
+    |> Stream.map(fn packet -> {Packet.stream_index(packet), packet} end)
   end
 
   defp read(state, read, demand \\ nil) do

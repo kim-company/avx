@@ -44,7 +44,7 @@ defmodule AVxTest do
                Decoder.stream_format(decoder)
 
       decoder
-      |> Decoder.decode_frames_unpack(packets)
+      |> Decoder.decode_raw(packets)
       |> Enum.into(output)
 
       assert File.stat!(output_path).size > 0
