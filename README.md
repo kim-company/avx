@@ -74,6 +74,9 @@ The idea is to run the `mix test` loop inside a debugger, in my case `lldb`.
 To do so, we need to set some env variables, accomplished with `. DEBUG.fish` (check cocoa's link below if you shell is bash, or ask some LLM to translate the script 😉).
 To run the tests under the debugger, `lldb -- $ERLEXEC $CMD_ARGS test`.
 
+Usually I either let the test crash and then `bt` to have an overview of the stack, `f <frame number>` to select the frame I want to inspect,
+the `v <variable name>` to check the contents of the variable. Otherwise put a breakpoint with `br s -l <line number> -f libav.c`.
+
 ## Performance
 Nothing serious in here for now, but to give an idea:
 - M2 pro
