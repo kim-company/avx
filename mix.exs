@@ -24,6 +24,7 @@ defmodule AVx.MixProject do
   # Run "mix help deps" to learn about dependencies.
   defp deps do
     [
+      {:nimble_options, "~> 1.0.0"},
       {:elixir_make, "~> 0.6", runtime: false}
     ]
   end
