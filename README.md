@@ -67,6 +67,13 @@ This library is suitable as standalone or inside the elements of a [membrane]
 (https://github.com/membraneframework) pipeline for more complex setups (video
 mixers with dynamic inputs, WebRTC rooms, ...)
 
+## Debugging
+This library works with NIFs. When things go wrong, the BEAM exits!
+The idea is to run the `mix test` loop inside a debugger, in my case `lldb`.
+
+To do so, we need to set some env variables, accomplished with `. DEBUG.fish` (check cocoa's link below if you shell is bash, or ask some LLM to translate the script 😉).
+To run the tests under the debugger, `lldb -- $ERLEXEC $CMD_ARGS test`.
+
 ## Performance
 Nothing serious in here for now, but to give an idea:
 - M2 pro
