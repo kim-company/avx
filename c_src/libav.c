@@ -456,6 +456,8 @@ ERL_NIF_TERM decoder_alloc_context(ErlNifEnv *env, int argc,
   ctx->codec_ctx = codec_ctx;
   ctx->output_sample_format = codec_ctx->sample_fmt;
 
+  // Resampler is here to play well with the Membrane framework, which
+  // does not support planar PCM.
   if (is_planar(codec_ctx->sample_fmt))
     alloc_resampler(ctx);
 
