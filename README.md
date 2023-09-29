@@ -13,6 +13,8 @@ def deps do
 end
 ```
 
+Also, you need ffmpeg's libraries on your machine. `pkg-config` is used to find them.
+
 ## Features
 - [x] demux any audio/video container (mp4, ogg, mkv, ...)
 - [x] decode audio files
