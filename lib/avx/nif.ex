@@ -41,4 +41,12 @@ defmodule AVx.NIF do
   def decoder_stream_format(_ctx) do
     raise "NIF decoder_stream_format/1 not implemented"
   end
+
+  def unpack_frame(_frame) do
+    raise "NIF unpack_frame/1 not implemented"
+  end
+
+  def packet_stream_index(_packet) do
+    raise "NIF packet_stream_index/1 not implemented"
+  end
 end
