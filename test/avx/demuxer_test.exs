@@ -4,7 +4,7 @@ defmodule AVx.DemuxerTest do
   alias AVx.{Demuxer, Packet}
   alias AVx.Demuxer.MailboxReader
 
-  @input "test/data/safari.mp4"
+  @input "test/data/mic.mp4"
 
   @tag :tmp_dir
   test "demuxes aac track", %{tmp_dir: tmp_dir} do

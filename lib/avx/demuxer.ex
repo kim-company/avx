@@ -91,6 +91,9 @@ defmodule AVx.Demuxer do
 
         state ->
           case NIF.demuxer_read_packet(state.demuxer) do
+            {:error, _reason} ->
+              {[nil], %{state | eof: %{state.eof | demuxer: true}}}
+
             :eof ->
               {[nil], %{state | eof: %{state.eof | demuxer: true}}}
 
@@ -101,10 +104,13 @@ defmodule AVx.Demuxer do
               {[AVx.Packet.new(ref)], state}
           end
       end,
-      fn state -> close.(state.input) end
+      fn
+        {:error, reason} -> raise reason
+        state -> close.(state.input)
+      end
     )
-    |> Stream.filter(fn packet -> Packet.stream_index(packet) in accepted_streams end)
     |> Stream.map(fn packet -> {Packet.stream_index(packet), packet} end)
+    |> Stream.filter(fn {stream_index, _packet} -> stream_index in accepted_streams end)
   end
 
   defp read(state, read, demand \\ nil) do
