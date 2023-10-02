@@ -113,6 +113,11 @@ defmodule AVx.Demuxer do
     |> Stream.filter(fn {stream_index, _packet} -> stream_index in accepted_streams end)
   end
 
+  @spec unpack_packet(t(), Packet.t()) :: Packet.unpacked()
+  def unpack_packet(state, packet) do
+    AVx.NIF.demuxer_unpack_packet(state.demuxer, packet.ref)
+  end
+
   defp read(state, read, demand \\ nil) do
     demand = if demand != nil, do: demand, else: NIF.demuxer_demand(state.demuxer)
 

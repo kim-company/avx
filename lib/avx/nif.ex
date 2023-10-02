@@ -26,12 +26,16 @@ defmodule AVx.NIF do
     raise "NIF demuxer_demand/1 not implemented"
   end
 
+  def demuxer_unpack_packet(_ctx, _packet) do
+    raise "NIF demuxer_unpack_packet/2 not implemented"
+  end
+
   def demuxer_read_packet(_ctx) do
     raise "NIF demuxer_read_packet/1 not implemented"
   end
 
-  def decoder_alloc_context(_codec_id, _codec_params) do
-    raise "NIF decoder_alloc_context/2 not implemented"
+  def decoder_alloc_context(_stream) do
+    raise "NIF decoder_alloc_context/1 not implemented"
   end
 
   def decoder_add_data(_ctx, _packet) do
@@ -42,15 +46,11 @@ defmodule AVx.NIF do
     raise "NIF decoder_stream_format/1 not implemented"
   end
 
-  def unpack_frame(_frame) do
-    raise "NIF unpack_frame/1 not implemented"
+  def decoder_unpack_frame(_ctx, _frame) do
+    raise "NIF decoder_unpack_frame/2 not implemented"
   end
 
   def packet_stream_index(_packet) do
     raise "NIF packet_stream_index/1 not implemented"
-  end
-
-  def unpack_packet(_packet) do
-    raise "NIF unpack_packet/1 not implemented"
   end
 end

@@ -7,10 +7,4 @@ defmodule AVx.Frame do
   def new(ref) do
     %__MODULE__{ref: ref}
   end
-
-  @spec unpack(t()) :: unpacked()
-  def unpack(frame) do
-    {:ok, buffers} = AVx.NIF.unpack_frame(frame.ref)
-    buffers
-  end
 end

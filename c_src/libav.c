@@ -1,4 +1,3 @@
-#include "erl_drv_nif.h"
 #include "libswresample/swresample.h"
 #include <erl_nif.h>
 #include <libavcodec/avcodec.h>
@@ -296,12 +295,14 @@ int get_packet(ErlNifEnv *env, ERL_NIF_TERM term, AVPacket **packet) {
   return ret;
 }
 
-ERL_NIF_TERM unpack_packet(ErlNifEnv *env, int argc,
-                           const ERL_NIF_TERM argv[]) {
+ERL_NIF_TERM demuxer_unpack_packet(ErlNifEnv *env, int argc,
+                                   const ERL_NIF_TERM argv[]) {
   AVPacket *packet;
+  DemuxerCtx *ctx;
   ERL_NIF_TERM map, data;
 
-  get_packet(env, argv[0], &packet);
+  get_demuxer_context(env, argv[0], &ctx);
+  get_packet(env, argv[1], &packet);
 
   void *ptr = enif_make_new_binary(env, packet->size, &data);
   memcpy(ptr, packet->data, packet->size);
@@ -393,6 +394,10 @@ ERL_NIF_TERM demuxer_streams(ErlNifEnv *env, int argc,
                       &map);
     enif_make_map_put(env, map, enif_make_atom(env, "stream_index"),
                       enif_make_int(env, av_stream->index), &map);
+    enif_make_map_put(env, map, enif_make_atom(env, "timebase_num"),
+                      enif_make_int(env, av_stream->time_base.num), &map);
+    enif_make_map_put(env, map, enif_make_atom(env, "timebase_den"),
+                      enif_make_int(env, av_stream->time_base.den), &map);
 
     // TODO
     // Expand the information available to Elixir: here we can only select a
@@ -473,13 +478,29 @@ ERL_NIF_TERM decoder_alloc_context(ErlNifEnv *env, int argc,
   AVCodecContext *codec_ctx;
   DecoderCtx *ctx;
 
-  enif_get_int(env, argv[0], &codec_id);
-  get_codec_params(env, argv[1], &params);
+  // Intermediate decoding data.
+  ERL_NIF_TERM tmp;
+  int num, den;
+
+  enif_get_map_value(env, argv[0], enif_make_atom(env, "codec_id"), &tmp);
+  enif_get_int(env, tmp, &codec_id);
+
+  enif_get_map_value(env, argv[0], enif_make_atom(env, "codec_params"), &tmp);
+  get_codec_params(env, tmp, &params);
+
+  enif_get_map_value(env, argv[0], enif_make_atom(env, "timebase_num"), &tmp);
+  enif_get_int(env, tmp, &num);
+
+  enif_get_map_value(env, argv[0], enif_make_atom(env, "timebase_den"), &tmp);
+  enif_get_int(env, tmp, &den);
 
   codec = avcodec_find_decoder((enum AVCodecID)codec_id);
   codec_ctx = avcodec_alloc_context3(codec);
 
   avcodec_parameters_to_context(codec_ctx, params);
+  codec_ctx->pkt_timebase.num = num;
+  codec_ctx->pkt_timebase.den = den;
+
   avcodec_open2(codec_ctx, codec, NULL);
 
   ctx = (DecoderCtx *)malloc(sizeof(DecoderCtx));
@@ -629,11 +650,14 @@ int get_frame(ErlNifEnv *env, ERL_NIF_TERM term, AVFrame **frame) {
   return ret;
 }
 
-ERL_NIF_TERM unpack_frame(ErlNifEnv *env, int argc, const ERL_NIF_TERM argv[]) {
+ERL_NIF_TERM decoder_unpack_frame(ErlNifEnv *env, int argc,
+                                  const ERL_NIF_TERM argv[]) {
   AVFrame *frame;
+  DecoderCtx *ctx;
   ERL_NIF_TERM list;
 
-  get_frame(env, argv[0], &frame);
+  get_decoder_context(env, argv[0], &ctx);
+  get_frame(env, argv[1], &frame);
 
   list = enif_make_list(env, 0);
   AVBufferRef *ref;
@@ -704,13 +728,13 @@ static ErlNifFunc nif_funcs[] = {
     {"demuxer_demand", 1, demuxer_demand},
     {"demuxer_streams", 1, demuxer_streams},
     {"demuxer_read_packet", 1, demuxer_read_packet},
+    {"demuxer_unpack_packet", 2, demuxer_unpack_packet},
     // Decoder
-    {"decoder_alloc_context", 2, decoder_alloc_context},
+    {"decoder_alloc_context", 1, decoder_alloc_context},
     {"decoder_stream_format", 1, decoder_stream_format},
     {"decoder_add_data", 2, decoder_add_data},
+    {"decoder_unpack_frame", 2, decoder_unpack_frame},
     // General
-    {"unpack_frame", 1, unpack_frame},
-    {"unpack_packet", 1, unpack_packet},
     {"packet_stream_index", 1, packet_stream_index},
 };
 

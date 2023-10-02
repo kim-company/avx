@@ -1,7 +1,7 @@
 defmodule AVx.DemuxerTest do
   use ExUnit.Case
 
-  alias AVx.{Demuxer, Packet}
+  alias AVx.Demuxer
   alias AVx.Demuxer.MailboxReader
 
   @input "test/data/mic.mp4"
@@ -30,7 +30,7 @@ defmodule AVx.DemuxerTest do
 
     demuxer
     |> Demuxer.consume_packets([stream.stream_index], read, close)
-    |> collect_data(output)
+    |> collect_data(output, demuxer)
 
     assert File.stat!(output_path).size > 0
   end
@@ -62,16 +62,16 @@ defmodule AVx.DemuxerTest do
       &MailboxReader.read/2,
       &MailboxReader.close/1
     )
-    |> collect_data(output)
+    |> collect_data(output, demuxer)
 
     assert File.stat!(output_path).size > 0
   end
 
-  defp collect_data(packets, output) do
+  defp collect_data(packets, output, demuxer) do
     packets
     |> Stream.map(fn {_, packet} -> packet end)
     |> Stream.filter(fn packet -> packet != nil end)
-    |> Stream.map(&Packet.unpack/1)
+    |> Stream.map(&Demuxer.unpack_packet(demuxer, &1))
     |> Stream.map(fn unpacked -> unpacked.data end)
     |> Enum.into(output)
   end
