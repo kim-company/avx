@@ -3,3 +3,4 @@ test/data/mic.mkv filter=lfs diff=lfs merge=lfs -text
 test/data/mic.mp3 filter=lfs diff=lfs merge=lfs -text
 test/data/mic.mp4 filter=lfs diff=lfs merge=lfs -text
 test/data/mic.ogg filter=lfs diff=lfs merge=lfs -text
+test/data/packed.aac filter=lfs diff=lfs merge=lfs -text
