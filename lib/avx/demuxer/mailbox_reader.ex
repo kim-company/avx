@@ -62,7 +62,7 @@ defmodule AVx.Demuxer.MailboxReader do
       <<buf::binary-size(size), rest::binary>> = state.buffer
       {buf, %{state | pending: nil, buffer: rest}}
     else
-      {state.buffer, %{state | buffer: <<>>}}
+      {state.buffer, %{state | pending: nil, buffer: <<>>}}
     end
   end
 end
