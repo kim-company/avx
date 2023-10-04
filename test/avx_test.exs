@@ -1,7 +1,7 @@
 defmodule AVxTest do
   use ExUnit.Case
 
-  alias AVx.{Demuxer, Decoder}
+  alias AVx.{Demuxer, Decoder, Frame}
 
   @inputs [
     "test/data/mic.mp4",
@@ -13,22 +13,9 @@ defmodule AVxTest do
   ]
 
   for input <- @inputs do
-    @tag :tmp_dir
-    test "extract audio track from #{input}", %{tmp_dir: tmp_dir} do
-      input = File.open!(unquote(input), [:raw, :read])
-      output_path = Path.join([tmp_dir, "output.raw"])
-      output = File.stream!(output_path, [:raw, :write])
-
-      demuxer = Demuxer.new!(probe_size: 2048, input: input)
-
-      read = fn input, size ->
-        resp = IO.binread(input, size)
-        {resp, input}
-      end
-
-      close = fn input -> File.close(input) end
-
-      {streams, demuxer} = Demuxer.streams(demuxer, read)
+    test "extract audio track from #{input}" do
+      demuxer = Demuxer.new_from_file(unquote(input))
+      {streams, demuxer} = Demuxer.streams(demuxer)
 
       assert stream =
                %{codec_type: :audio} =
@@ -36,7 +23,7 @@ defmodule AVxTest do
 
       packets =
         demuxer
-        |> Demuxer.consume_packets([stream.stream_index], read, close)
+        |> Demuxer.consume_packets([stream.stream_index])
         |> Stream.map(fn {_, packet} -> packet end)
 
       decoder = Decoder.new!(stream)
@@ -44,16 +31,22 @@ defmodule AVxTest do
       assert %{channels: _, sample_rate: 48000, sample_format: "flt"} =
                Decoder.stream_format(decoder)
 
+      info = Support.show_frames(unquote(input))
+      assert_frames(packets, decoder, info)
+    end
+  end
+
+  defp assert_frames(packets, decoder, expected_frames) do
+    count =
       decoder
       |> Decoder.decode_frames(packets)
-      |> Stream.flat_map(&Decoder.unpack_frame(decoder, &1))
-      |> Stream.map(fn x ->
-        # IO.inspect(x.pts)
-        x.data
+      |> Stream.flat_map(&Frame.unpack(&1))
+      |> Stream.zip(expected_frames)
+      |> Enum.reduce(0, fn {have, want}, count ->
+        assert have.pts == Map.fetch!(want, "pts")
+        count + 1
       end)
-      |> Enum.into(output)
 
-      assert File.stat!(output_path).size > 0
-    end
+    assert count == length(expected_frames)
   end
 end

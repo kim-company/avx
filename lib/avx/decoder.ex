@@ -55,13 +55,7 @@ defmodule AVx.Decoder do
   def decode_raw(state, packets) do
     state
     |> decode_frames(packets)
-    |> Stream.flat_map(&unpack_frame(state, &1))
+    |> Stream.flat_map(&Frame.unpack(&1))
     |> Stream.map(fn x -> x.data end)
-  end
-
-  @spec unpack_frame(t(), Frame.t()) :: [Frame.unpacked()]
-  def unpack_frame(state, frame) do
-    {:ok, buffers} = AVx.NIF.decoder_unpack_frame(state.decoder, frame.ref)
-    buffers
   end
 end

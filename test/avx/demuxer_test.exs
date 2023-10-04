@@ -1,78 +1,87 @@
 defmodule AVx.DemuxerTest do
   use ExUnit.Case
 
-  alias AVx.Demuxer
+  alias AVx.{Demuxer, Packet}
   alias AVx.Demuxer.MailboxReader
 
   @input "test/data/mic.mp4"
 
-  @tag :tmp_dir
-  test "demuxes aac track", %{tmp_dir: tmp_dir} do
-    input = File.open!(@input, [:raw, :read])
-    output_path = Path.join([tmp_dir, "output.aac"])
-    output = File.stream!(output_path, [:raw, :write])
+  describe "demuxer" do
+    test "from file" do
+      demuxer = Demuxer.new_from_file(@input)
 
-    demuxer = Demuxer.new!(probe_size: 2048, input: input)
+      {streams, demuxer} = Demuxer.streams(demuxer)
 
-    read = fn input, size ->
-      resp = IO.binread(input, size)
-      {resp, input}
+      stream = Enum.find(streams, fn stream -> stream.codec_type == :audio end)
+
+      info = Support.show_packets(@input)
+      assert_packets(demuxer, [stream.stream_index], info)
     end
 
-    close = fn input -> File.close(input) end
+    test "with bin read from memory" do
+      demuxer =
+        Demuxer.new_in_memory(%{
+          opaque: File.open!(@input, [:raw, :read]),
+          read: fn input, size ->
+            resp = IO.binread(input, size)
+            {resp, input}
+          end,
+          close: fn input -> File.close(input) end
+        })
 
-    {streams, demuxer} = Demuxer.streams(demuxer, read)
-    stream = Enum.find(streams, fn stream -> stream.codec_type == :audio end)
+      {streams, demuxer} = Demuxer.streams(demuxer)
 
-    # TODO
-    # Why is this file not playable by ffplay out of the box? Did
-    # the demuxer strip away headers or other relevant info?
+      stream = Enum.find(streams, fn stream -> stream.codec_type == :audio end)
 
-    demuxer
-    |> Demuxer.consume_packets([stream.stream_index], read, close)
-    |> collect_data(output, demuxer)
+      info = Support.show_packets(@input)
+      assert_packets(demuxer, [stream.stream_index], info)
+    end
 
-    assert File.stat!(output_path).size > 0
-  end
+    @tag skip: false
+    test "with MailboxReader" do
+      pid = start_link_supervised!(MailboxReader)
 
-  @tag :tmp_dir
-  test "with MailboxReader", %{tmp_dir: tmp_dir} do
-    pid = start_link_supervised!(MailboxReader)
-    input = File.stream!(@input, [:raw, :read])
+      spawn_link(fn ->
+        @input
+        |> File.stream!([:raw, :read], 2048)
+        |> Enum.map(fn data ->
+          send(pid, {:data, data})
+        end)
 
-    spawn_link(fn ->
-      input
-      |> Enum.map(fn data ->
-        send(pid, {:data, data})
+        send(pid, {:data, nil})
       end)
 
-      send(pid, {:data, nil})
-    end)
+      demuxer =
+        Demuxer.new_in_memory(%{
+          opaque: pid,
+          read: &MailboxReader.read/2,
+          close: &MailboxReader.close/1
+        })
 
-    output_path = Path.join([tmp_dir, "output.aac"])
-    output = File.stream!(output_path, [:raw, :write])
+      {streams, demuxer} = Demuxer.streams(demuxer)
 
-    demuxer = Demuxer.new!(probe_size: 2048, input: pid)
-    {streams, demuxer} = Demuxer.streams(demuxer, &MailboxReader.read/2)
-    stream = Enum.find(streams, fn stream -> stream.codec_type == :audio end)
+      stream = Enum.find(streams, fn stream -> stream.codec_type == :audio end)
 
-    demuxer
-    |> Demuxer.consume_packets(
-      [stream.stream_index],
-      &MailboxReader.read/2,
-      &MailboxReader.close/1
-    )
-    |> collect_data(output, demuxer)
+      info = Support.show_packets(@input)
+      assert_packets(demuxer, [stream.stream_index], info)
+    end
 
-    assert File.stat!(output_path).size > 0
-  end
+    defp assert_packets(demuxer, indexes, expected_packets) do
+      count =
+        demuxer
+        |> Demuxer.consume_packets(indexes)
+        |> Stream.map(fn {_, packet} -> packet end)
+        |> Stream.filter(fn packet -> packet != nil end)
+        |> Stream.map(&Packet.unpack(&1))
+        |> Stream.zip(expected_packets)
+        |> Enum.reduce(0, fn {have, want}, count ->
+          assert have.pts == Map.fetch!(want, "pts")
+          assert have.dts == Map.fetch!(want, "dts")
+          assert byte_size(have.data) == Map.fetch!(want, "size") |> String.to_integer()
+          count + 1
+        end)
 
-  defp collect_data(packets, output, demuxer) do
-    packets
-    |> Stream.map(fn {_, packet} -> packet end)
-    |> Stream.filter(fn packet -> packet != nil end)
-    |> Stream.map(&Demuxer.unpack_packet(demuxer, &1))
-    |> Stream.map(fn unpacked -> unpacked.data end)
-    |> Enum.into(output)
+      assert count == length(expected_packets)
+    end
   end
 end

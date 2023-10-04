@@ -6,8 +6,12 @@ defmodule AVx.NIF do
     :erlang.load_nif(path, 0)
   end
 
-  def demuxer_alloc_context(_probe_size) do
-    raise "NIF demuxer_alloc_context/1 not implemented"
+  def demuxer_alloc(_probe_size) do
+    raise "NIF demuxer_alloc/1 not implemented"
+  end
+
+  def demuxer_alloc_from_file(_path) do
+    raise "NIF demuxer_alloc_from_file/1 not implemented"
   end
 
   def demuxer_add_data(_ctx, _data) do
@@ -26,10 +30,6 @@ defmodule AVx.NIF do
     raise "NIF demuxer_demand/1 not implemented"
   end
 
-  def demuxer_unpack_packet(_ctx, _packet) do
-    raise "NIF demuxer_unpack_packet/2 not implemented"
-  end
-
   def demuxer_read_packet(_ctx) do
     raise "NIF demuxer_read_packet/1 not implemented"
   end
@@ -46,11 +46,15 @@ defmodule AVx.NIF do
     raise "NIF decoder_stream_format/1 not implemented"
   end
 
-  def decoder_unpack_frame(_ctx, _frame) do
-    raise "NIF decoder_unpack_frame/2 not implemented"
-  end
-
   def packet_stream_index(_packet) do
     raise "NIF packet_stream_index/1 not implemented"
+  end
+
+  def packet_unpack(_packet) do
+    raise "NIF packet_unpack/1 not implemented"
+  end
+
+  def frame_unpack(_frame) do
+    raise "NIF frame_unpack/1 not implemented"
   end
 end

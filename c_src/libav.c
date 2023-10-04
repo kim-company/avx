@@ -3,6 +3,7 @@
 #include <libavcodec/avcodec.h>
 #include <libavformat/avformat.h>
 #include <libavformat/avio.h>
+#include <string.h>
 
 // The smaller this number:
 // * the less we have to keep in the ioq
@@ -106,8 +107,12 @@ typedef struct {
 
 void free_demuxer_context_res(ErlNifEnv *env, void *res) {
   DemuxerCtx **ctx = (DemuxerCtx **)res;
-  free((*ctx)->queue->ptr);
-  avio_context_free(&(*ctx)->io_ctx);
+
+  if ((*ctx)->queue) {
+    free((*ctx)->queue->ptr);
+    avio_context_free(&(*ctx)->io_ctx);
+  }
+
   avformat_close_input(&(*ctx)->fmt_ctx);
   free(*ctx);
 }
@@ -149,7 +154,6 @@ int demuxer_read_header(DemuxerCtx *ctx) {
   io_ctx->seekable = 0;
 
   fmt_ctx = avformat_alloc_context();
-  fmt_ctx->flags |= AVFMT_FLAG_CUSTOM_IO;
   fmt_ctx->pb = io_ctx;
   fmt_ctx->probesize = ctx->queue->size;
 
@@ -180,8 +184,41 @@ open_error:
   return errnum;
 }
 
-ERL_NIF_TERM demuxer_alloc_context(ErlNifEnv *env, int argc,
-                                   const ERL_NIF_TERM argv[]) {
+ERL_NIF_TERM demuxer_alloc_from_file(ErlNifEnv *env, int argc,
+                                     const ERL_NIF_TERM argv[]) {
+  DemuxerCtx *ctx;
+  AVFormatContext *fmt_ctx;
+  ErlNifBinary binary;
+  char *path;
+
+  enif_inspect_binary(env, argv[0], &binary);
+  path = (char *)malloc(binary.size);
+  memcpy(path, binary.data, binary.size);
+
+  fmt_ctx = avformat_alloc_context();
+  avformat_open_input(&fmt_ctx, path, NULL, NULL);
+  avformat_find_stream_info(fmt_ctx, NULL);
+
+  ctx = (DemuxerCtx *)malloc(sizeof(DemuxerCtx));
+  ctx->has_header = 1;
+  ctx->fmt_ctx = fmt_ctx;
+
+  // Make the resource take ownership on the context.
+  DemuxerCtx **ctx_res =
+      enif_alloc_resource(DEMUXER_CTX_RES_TYPE, sizeof(DemuxerCtx *));
+  *ctx_res = ctx;
+
+  ERL_NIF_TERM term = enif_make_resource(env, ctx_res);
+
+  // This is done to allow the erlang garbage collector to take care
+  // of freeing this resource when needed.
+  enif_release_resource(ctx_res);
+
+  return term;
+}
+
+ERL_NIF_TERM demuxer_alloc(ErlNifEnv *env, int argc,
+                           const ERL_NIF_TERM argv[]) {
   int probe_size;
 
   enif_get_int(env, argv[0], &probe_size);
@@ -220,6 +257,14 @@ ERL_NIF_TERM demuxer_add_data(ErlNifEnv *env, int argc,
   ErlNifBinary binary;
 
   get_demuxer_context(env, argv[0], &ctx);
+
+  // This should not happen if the demuxer is reading
+  // data from a file.
+  if (!ctx->queue)
+    return enif_make_tuple2(
+        env, enif_make_atom(env, "error"),
+        enif_make_string(env, "demuxer is reading from a file", ERL_NIF_UTF8));
+
   enif_inspect_binary(env, argv[1], &binary);
 
   // Indicates EOS.
@@ -246,16 +291,12 @@ ERL_NIF_TERM demuxer_is_ready(ErlNifEnv *env, int argc,
   return ctx->has_header ? enif_make_atom(env, "true")
                          : enif_make_atom(env, "false");
 }
-
-ERL_NIF_TERM demuxer_read_packet(ErlNifEnv *env, int argc,
-                                 const ERL_NIF_TERM argv[]) {
-  DemuxerCtx *ctx;
+ERL_NIF_TERM demuxer_read_packet_from_queue(ErlNifEnv *env, DemuxerCtx *ctx) {
   AVPacket *packet;
   int errnum, freespace;
   char err[256];
 
   packet = av_packet_alloc();
-  get_demuxer_context(env, argv[0], &ctx);
 
   freespace = queue_freespace(ctx->queue);
 
@@ -272,19 +313,35 @@ ERL_NIF_TERM demuxer_read_packet(ErlNifEnv *env, int argc,
                             enif_make_string(env, err, ERL_NIF_UTF8));
   }
 
-  // TODO
-  // if metadata contains apple's timestamp offset, we have to shift
-  // the timing values of the packets.
-  // Check
-  // https://github.com/FFmpeg/FFmpeg/blob/9240035c0e0c81d59a8175e84ca8b2b8595ee343/libavformat/hls.c#L2253
-  // if (ctx->fmt_ctx->metadata) {
-  //   AVDictionaryEntry *tag = NULL;
+  // Make the resource
+  AVPacket **packet_res =
+      enif_alloc_resource(PACKET_RES_TYPE, sizeof(AVPacket *));
+  *packet_res = packet;
 
-  //   while ((tag = av_dict_get(ctx->fmt_ctx->metadata, "", tag,
-  //                             AV_DICT_IGNORE_SUFFIX))) {
-  //     printf("%s=%s\n", tag->key, tag->value);
-  //   }
-  // }
+  ERL_NIF_TERM res_term = enif_make_resource(env, packet_res);
+
+  // This is done to allow the erlang garbage collector to take care
+  // of freeing this resource when needed.
+  enif_release_resource(packet_res);
+
+  return enif_make_tuple2(env, enif_make_atom(env, "ok"), res_term);
+}
+
+ERL_NIF_TERM demuxer_read_packet_from_file(ErlNifEnv *env, DemuxerCtx *ctx) {
+  AVPacket *packet;
+  int errnum, freespace;
+  char err[256];
+
+  packet = av_packet_alloc();
+
+  if ((errnum = av_read_frame(ctx->fmt_ctx, packet)) < 0) {
+    if (errnum == AVERROR_EOF)
+      return enif_make_atom(env, "eof");
+
+    av_strerror(errnum, err, sizeof(err));
+    return enif_make_tuple2(env, enif_make_atom(env, "error"),
+                            enif_make_string(env, err, ERL_NIF_UTF8));
+  }
 
   // Make the resource
   AVPacket **packet_res =
@@ -300,6 +357,16 @@ ERL_NIF_TERM demuxer_read_packet(ErlNifEnv *env, int argc,
   return enif_make_tuple2(env, enif_make_atom(env, "ok"), res_term);
 }
 
+ERL_NIF_TERM demuxer_read_packet(ErlNifEnv *env, int argc,
+                                 const ERL_NIF_TERM argv[]) {
+  DemuxerCtx *ctx;
+
+  get_demuxer_context(env, argv[0], &ctx);
+  if (ctx->queue)
+    return demuxer_read_packet_from_queue(env, ctx);
+  return demuxer_read_packet_from_file(env, ctx);
+}
+
 int get_packet(ErlNifEnv *env, ERL_NIF_TERM term, AVPacket **packet) {
   AVPacket **packet_res;
   int ret;
@@ -310,14 +377,12 @@ int get_packet(ErlNifEnv *env, ERL_NIF_TERM term, AVPacket **packet) {
   return ret;
 }
 
-ERL_NIF_TERM demuxer_unpack_packet(ErlNifEnv *env, int argc,
-                                   const ERL_NIF_TERM argv[]) {
+ERL_NIF_TERM packet_unpack(ErlNifEnv *env, int argc,
+                           const ERL_NIF_TERM argv[]) {
   AVPacket *packet;
-  DemuxerCtx *ctx;
   ERL_NIF_TERM map, data;
 
-  get_demuxer_context(env, argv[0], &ctx);
-  get_packet(env, argv[1], &packet);
+  get_packet(env, argv[0], &packet);
 
   void *ptr = enif_make_new_binary(env, packet->size, &data);
   memcpy(ptr, packet->data, packet->size);
@@ -665,14 +730,11 @@ int get_frame(ErlNifEnv *env, ERL_NIF_TERM term, AVFrame **frame) {
   return ret;
 }
 
-ERL_NIF_TERM decoder_unpack_frame(ErlNifEnv *env, int argc,
-                                  const ERL_NIF_TERM argv[]) {
+ERL_NIF_TERM frame_unpack(ErlNifEnv *env, int argc, const ERL_NIF_TERM argv[]) {
   AVFrame *frame;
-  DecoderCtx *ctx;
   ERL_NIF_TERM list;
 
-  get_decoder_context(env, argv[0], &ctx);
-  get_frame(env, argv[1], &frame);
+  get_frame(env, argv[0], &frame);
 
   list = enif_make_list(env, 0);
   AVBufferRef *ref;
@@ -737,20 +799,21 @@ int load(ErlNifEnv *env, void **priv_data, ERL_NIF_TERM load_info) {
 static ErlNifFunc nif_funcs[] = {
     // {erl_function_name, erl_function_arity, c_function}
     // Demuxer
-    {"demuxer_alloc_context", 1, demuxer_alloc_context},
+    {"demuxer_alloc", 1, demuxer_alloc},
+    {"demuxer_alloc_from_file", 1, demuxer_alloc_from_file},
     {"demuxer_add_data", 2, demuxer_add_data},
     {"demuxer_is_ready", 1, demuxer_is_ready},
     {"demuxer_demand", 1, demuxer_demand},
     {"demuxer_streams", 1, demuxer_streams},
     {"demuxer_read_packet", 1, demuxer_read_packet},
-    {"demuxer_unpack_packet", 2, demuxer_unpack_packet},
     // Decoder
     {"decoder_alloc_context", 1, decoder_alloc_context},
     {"decoder_stream_format", 1, decoder_stream_format},
     {"decoder_add_data", 2, decoder_add_data},
-    {"decoder_unpack_frame", 2, decoder_unpack_frame},
     // General
     {"packet_stream_index", 1, packet_stream_index},
+    {"packet_unpack", 1, packet_unpack},
+    {"frame_unpack", 1, frame_unpack},
 };
 
 ERL_NIF_INIT(Elixir.AVx.NIF, nif_funcs, load, NULL, NULL, NULL)

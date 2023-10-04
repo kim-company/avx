@@ -11,25 +11,25 @@ defmodule AVx.Demuxer.MailboxReader do
       {:ok, data} ->
         {data, server}
 
-      {:eof} ->
+      :eof ->
         {:eof, server}
     end
   end
 
-  def close(pid) do
-    Process.exit(pid, :normal)
+  def close(_pid) do
+    :ok
   end
 
   @impl GenServer
   def init(_opts) do
-    {:ok, %{pending: nil, buffer: <<>>, eof: false}}
+    {:ok, %{pending: nil, buffer: <<>>, recv: 0, sent: 0, eof: false}}
   end
 
   @impl true
   def handle_call({:read, size}, from, state) do
     cond do
       state.eof and byte_size(state.buffer) == 0 ->
-        {:reply, :eof, state}
+        {:stop, :normal, :eof, state}
 
       byte_size(state.buffer) == 0 ->
         {:noreply, %{state | pending: {from, size}}}
@@ -46,7 +46,7 @@ defmodule AVx.Demuxer.MailboxReader do
   end
 
   def handle_info({:data, data}, state = %{pending: nil}) do
-    {:noreply, %{state | buffer: state.buffer <> data}}
+    {:noreply, %{state | buffer: state.buffer <> data, recv: state.recv + byte_size(data)}}
   end
 
   def handle_info({:data, data}, state = %{pending: {from, size}}) do
@@ -60,9 +60,10 @@ defmodule AVx.Demuxer.MailboxReader do
   defp read_buffer(state, size) do
     if byte_size(state.buffer) >= size do
       <<buf::binary-size(size), rest::binary>> = state.buffer
-      {buf, %{state | pending: nil, buffer: rest}}
+      {buf, %{state | pending: nil, buffer: rest, sent: state.sent + byte_size(buf)}}
     else
-      {state.buffer, %{state | pending: nil, buffer: <<>>}}
+      {state.buffer,
+       %{state | pending: nil, buffer: <<>>, sent: state.sent + byte_size(state.buffer)}}
     end
   end
 end

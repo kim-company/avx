@@ -14,4 +14,9 @@ defmodule AVx.Packet do
   def stream_index(packet) do
     AVx.NIF.packet_stream_index(packet.ref)
   end
+
+  @spec unpack(t()) :: Packet.unpacked()
+  def unpack(packet) do
+    AVx.NIF.packet_unpack(packet.ref)
+  end
 end

@@ -1,23 +1,17 @@
 defmodule AVx.Demuxer do
   alias AVx.{NIF, Packet}
+  @default_probe_size 2048
 
-  @schema [
-    probe_size: [
-      type: :non_neg_integer,
-      default: 2048,
-      doc:
-        "Initial probe size. Will be increased if the header is not found within `probe_size` bytes iteratively, until the header is parserd"
-    ],
-    input: [
-      type: :any,
-      required: true,
-      doc: "Opaque input used as parameter to read operations"
-    ]
-  ]
-
+  @type read :: (any(), size :: pos_integer -> {:eof | iodata(), any()})
+  @type close :: (any() -> :ok)
   @type input :: any()
-  @type read :: (input(), size :: pos_integer -> {:eof | iodata(), input()})
-  @type close :: (input() -> :ok)
+
+  @type reader :: %{
+          read: read(),
+          close: close(),
+          opaque: any(),
+          probe_size: non_neg_integer()
+        }
 
   @type codec_type :: :audio | :video
 
@@ -29,45 +23,41 @@ defmodule AVx.Demuxer do
           codec_params: reference()
         }
 
-  @type t :: %__MODULE__{demuxer: reference(), input: input(), eof: map()}
-  defstruct [:demuxer, :input, eof: %{input: false, demuxer: false}]
+  @type t :: %__MODULE__{
+          demuxer: reference(),
+          reader: reader() | nil,
+          file_path: Path.t() | nil,
+          eof: map()
+        }
+  defstruct [:demuxer, :reader, :file_path, eof: %{input: false, demuxer: false}]
 
-  @spec new!(Keyword.t()) :: t()
-  def new!(opts) do
-    opts = NimbleOptions.validate!(opts, @schema)
-    %__MODULE__{demuxer: NIF.demuxer_alloc_context(opts[:probe_size]), input: opts[:input]}
+  @spec new_in_memory(reader()) :: t()
+  def new_in_memory(reader) do
+    probe_size = Map.get(reader, :probe_size, @default_probe_size)
+    %__MODULE__{demuxer: NIF.demuxer_alloc(probe_size), reader: reader}
+  end
+
+  @spec new_from_file(Path.t()) :: t()
+  def new_from_file(path) do
+    %__MODULE__{demuxer: NIF.demuxer_alloc_from_file(path), file_path: path}
   end
 
   @doc """
   Consumes the input until the header is parsed. Then, the available streams are returned.
   """
-  @spec streams(t(), read()) :: {[stream()], t()}
-  def streams(state, read) do
+  @spec streams(t()) :: {[stream()], t()}
+  def streams(state = %{reader: reader}) when reader != nil do
     if NIF.demuxer_is_ready(state.demuxer) or state.eof.input do
-      streams =
-        state.demuxer
-        |> NIF.demuxer_streams()
-        # TODO error handling?
-        |> elem(1)
-        |> Enum.map(fn stream ->
-          # Coming from erlang, strings are charlists.
-          stream
-          |> Enum.map(fn {key, value} ->
-            if is_list(value) do
-              {key, to_string(value)}
-            else
-              {key, value}
-            end
-          end)
-          |> Map.new()
-        end)
-
-      {streams, state}
+      read_streams(state)
     else
       state
-      |> read(read)
-      |> streams(read)
+      |> read_input()
+      |> streams()
     end
+  end
+
+  def streams(state) do
+    read_streams(state)
   end
 
   @doc """
@@ -76,10 +66,10 @@ defmodule AVx.Demuxer do
 
   Returns an enumerable of AVx.Packet.
   """
-  @spec consume_packets(t(), [pos_integer()], read(), close()) :: Enumerable.t()
-  def consume_packets(state, stream_indexes, read, close) do
+  @spec consume_packets(t(), [pos_integer()]) :: Enumerable.t()
+  def consume_packets(state = %{reader: reader}, stream_indexes) when reader != nil do
     # -1 is used as an indicator for the last packet, which must
-    # be delivered to the demuxer to put it into drain mode.
+    # be delivered to the decoder to put it into drain mode.
     accepted_streams = stream_indexes ++ [-1]
 
     # TODO error handling?
@@ -98,7 +88,7 @@ defmodule AVx.Demuxer do
               {[nil], %{state | eof: %{state.eof | demuxer: true}}}
 
             {:demand, demand} ->
-              {[], read(state, read, demand)}
+              {[], read_input(state, demand)}
 
             {:ok, ref} ->
               {[AVx.Packet.new(ref)], state}
@@ -106,29 +96,89 @@ defmodule AVx.Demuxer do
       end,
       fn
         {:error, reason} -> raise reason
-        state -> close.(state.input)
+        state -> state.reader.close.(state.reader.opaque)
       end
     )
+    |> filter_packets(accepted_streams)
+  end
+
+  def consume_packets(state, stream_indexes) do
+    # -1 is used as an indicator for the last packet, which must
+    # be delivered to the decoder to put it into drain mode.
+    accepted_streams = stream_indexes ++ [-1]
+
+    Stream.resource(
+      fn -> state end,
+      fn
+        state = %__MODULE__{eof: %{demuxer: true}} ->
+          {:halt, state}
+
+        state ->
+          # There is no demand when the demuxer is taking care of
+          # the input internally.
+          case NIF.demuxer_read_packet(state.demuxer) do
+            {:error, _reason} ->
+              {[nil], %{state | eof: %{state.eof | demuxer: true}}}
+
+            :eof ->
+              {[nil], %{state | eof: %{state.eof | demuxer: true}}}
+
+            {:ok, ref} ->
+              {[AVx.Packet.new(ref)], state}
+          end
+      end,
+      fn _state -> :ok end
+    )
+    |> filter_packets(accepted_streams)
+  end
+
+  defp filter_packets(packets, accepted_streams) do
+    packets
     |> Stream.map(fn packet -> {Packet.stream_index(packet), packet} end)
     |> Stream.filter(fn {stream_index, _packet} -> stream_index in accepted_streams end)
   end
 
-  @spec unpack_packet(t(), Packet.t()) :: Packet.unpacked()
-  def unpack_packet(state, packet) do
-    AVx.NIF.demuxer_unpack_packet(state.demuxer, packet.ref)
+  def consume_raw(state, stream_indexes) do
+    state
+    |> consume_packets(stream_indexes)
+    |> Stream.map(fn {_, packet} -> packet end)
+    |> Stream.filter(fn packet -> packet != nil end)
+    |> Stream.map(&Packet.unpack/1)
   end
 
-  defp read(state, read, demand \\ nil) do
+  defp read_input(state, demand \\ nil) do
     demand = if demand != nil, do: demand, else: NIF.demuxer_demand(state.demuxer)
 
-    case read.(state.input, demand) do
-      {:eof, input} ->
+    case state.reader.read.(state.reader.opaque, demand) do
+      {:eof, opaque} ->
         NIF.demuxer_add_data(state.demuxer, nil)
-        %{state | input: input, eof: %{state.eof | input: true}}
+        %{state | reader: %{state.reader | opaque: opaque}, eof: %{state.eof | input: true}}
 
-      {data, input} ->
+      {data, opaque} ->
         NIF.demuxer_add_data(state.demuxer, data)
-        %{state | input: input}
+        %{state | reader: %{state.reader | opaque: opaque}}
     end
+  end
+
+  defp read_streams(state) do
+    streams =
+      state.demuxer
+      |> NIF.demuxer_streams()
+      # TODO error handling?
+      |> elem(1)
+      |> Enum.map(fn stream ->
+        # Coming from erlang, strings are charlists.
+        stream
+        |> Enum.map(fn {key, value} ->
+          if is_list(value) do
+            {key, to_string(value)}
+          else
+            {key, value}
+          end
+        end)
+        |> Map.new()
+      end)
+
+    {streams, state}
   end
 end

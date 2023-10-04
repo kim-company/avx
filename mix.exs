@@ -25,10 +25,11 @@ defmodule AVx.MixProject do
   defp deps do
     [
       {:nimble_options, "~> 1.0.0"},
-      {:elixir_make, "~> 0.6", runtime: false}
+      {:elixir_make, "~> 0.6", runtime: false},
+      {:jason, "~> 1.4.1"}
     ]
   end
 
-  defp elixirc_paths(:test), do: ["lib", "test/support"]
+  defp elixirc_paths(:test), do: ["lib", "test"]
   defp elixirc_paths(_env), do: ["lib"]
 end
