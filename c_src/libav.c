@@ -272,6 +272,20 @@ ERL_NIF_TERM demuxer_read_packet(ErlNifEnv *env, int argc,
                             enif_make_string(env, err, ERL_NIF_UTF8));
   }
 
+  // TODO
+  // if metadata contains apple's timestamp offset, we have to shift
+  // the timing values of the packets.
+  // Check
+  // https://github.com/FFmpeg/FFmpeg/blob/9240035c0e0c81d59a8175e84ca8b2b8595ee343/libavformat/hls.c#L2253
+  // if (ctx->fmt_ctx->metadata) {
+  //   AVDictionaryEntry *tag = NULL;
+
+  //   while ((tag = av_dict_get(ctx->fmt_ctx->metadata, "", tag,
+  //                             AV_DICT_IGNORE_SUFFIX))) {
+  //     printf("%s=%s\n", tag->key, tag->value);
+  //   }
+  // }
+
   // Make the resource
   AVPacket **packet_res =
       enif_alloc_resource(PACKET_RES_TYPE, sizeof(AVPacket *));
