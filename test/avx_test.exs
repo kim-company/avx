@@ -8,7 +8,8 @@ defmodule AVxTest do
     "test/data/mic.mp3",
     "test/data/mic.ogg",
     "test/data/mic.mkv",
-    "test/data/mic.aac"
+    "test/data/mic.aac",
+    "test/data/packed.aac"
   ]
 
   for input <- @inputs do
@@ -44,7 +45,12 @@ defmodule AVxTest do
                Decoder.stream_format(decoder)
 
       decoder
-      |> Decoder.decode_raw(packets)
+      |> Decoder.decode_frames(packets)
+      |> Stream.flat_map(&Decoder.unpack_frame(decoder, &1))
+      |> Stream.map(fn x ->
+        # IO.inspect(x.pts)
+        x.data
+      end)
       |> Enum.into(output)
 
       assert File.stat!(output_path).size > 0

@@ -149,6 +149,7 @@ int demuxer_read_header(DemuxerCtx *ctx) {
   io_ctx->seekable = 0;
 
   fmt_ctx = avformat_alloc_context();
+  fmt_ctx->flags |= AVFMT_FLAG_CUSTOM_IO;
   fmt_ctx->pb = io_ctx;
   fmt_ctx->probesize = ctx->queue->size;
 
