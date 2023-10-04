@@ -1,3 +1,4 @@
+#include "libavutil/log.h"
 #include "libswresample/swresample.h"
 #include <erl_nif.h>
 #include <libavcodec/avcodec.h>
@@ -777,6 +778,8 @@ void free_frame_res(ErlNifEnv *env, void *res) {
 
 // Called when the nif is loaded, as specified in the ERL_NIF_INIT call.
 int load(ErlNifEnv *env, void **priv_data, ERL_NIF_TERM load_info) {
+  av_log_set_level(AV_LOG_QUIET);
+
   int flags = ERL_NIF_RT_CREATE | ERL_NIF_RT_TAKEOVER;
   DEMUXER_CTX_RES_TYPE = enif_open_resource_type(
       env, NULL, "demuxer_ctx", free_demuxer_context_res, flags, NULL);
