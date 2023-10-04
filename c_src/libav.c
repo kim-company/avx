@@ -800,6 +800,9 @@ int load(ErlNifEnv *env, void **priv_data, ERL_NIF_TERM load_info) {
 }
 
 static ErlNifFunc nif_funcs[] = {
+    // TODO
+    // Some of these functions are IO dirty.
+
     // {erl_function_name, erl_function_arity, c_function}
     // Demuxer
     {"demuxer_alloc", 1, demuxer_alloc},
