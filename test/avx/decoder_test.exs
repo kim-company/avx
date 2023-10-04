@@ -1,4 +1,4 @@
-defmodule AVxTest do
+defmodule AVx.DecoderTest do
   use ExUnit.Case
 
   alias AVx.{Demuxer, Decoder, Frame}
