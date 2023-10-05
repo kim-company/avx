@@ -1,6 +1,7 @@
 #include "libavutil/log.h"
 #include "libswresample/swresample.h"
 #include <erl_nif.h>
+#include <ioq.h>
 #include <libavcodec/avcodec.h>
 #include <libavformat/avformat.h>
 #include <libavformat/avio.h>
@@ -17,77 +18,6 @@ ErlNifResourceType *CODEC_PARAMS_RES_TYPE;
 ErlNifResourceType *DECODER_CTX_RES_TYPE;
 ErlNifResourceType *PACKET_RES_TYPE;
 ErlNifResourceType *FRAME_RES_TYPE;
-
-typedef enum { QUEUE_MODE_SHIFT, QUEUE_MODE_GROW } QUEUE_MODE;
-
-typedef struct {
-  void *ptr;
-  // The total size of ptr
-  u_long size;
-  // Where the next bytes should be written at.
-  u_long buf_end;
-
-  // position of the last read.
-  u_long pos;
-
-  // Used to differentiate wether the queue is removing
-  // the bytes each time they're read or it is growing to
-  // accomodate more. The latter is used when probing the
-  // input to find the header.
-  QUEUE_MODE mode;
-} Ioq;
-
-int queue_is_filled(Ioq *q) { return q->buf_end == q->size; }
-int queue_freespace(Ioq *q) { return q->size - q->buf_end; }
-
-void queue_grow(Ioq *q, int factor) {
-  u_long new_size;
-
-  new_size = q->size * factor;
-  q->ptr = realloc(q->ptr, new_size);
-  q->size = new_size;
-}
-
-void queue_copy(Ioq *q, void *src, int size) {
-  // Do we have enough space for the data? If not, reallocate some space.
-  if (queue_freespace(q) < size)
-    queue_grow(q, 2);
-
-  memcpy(q->ptr + q->buf_end, src, size);
-  q->buf_end += size;
-}
-
-void queue_deq(Ioq *q) {
-  int unread;
-
-  unread = q->buf_end - q->pos;
-  if (unread == 0) {
-    q->pos = 0;
-    q->buf_end = 0;
-  } else {
-    memmove(q->ptr, q->ptr + q->pos, unread);
-    q->pos = 0;
-    q->buf_end = unread;
-  }
-}
-
-int queue_read(Ioq *q, void *dst, int buf_size) {
-  int unread;
-  int size;
-
-  unread = q->buf_end - q->pos;
-  if (unread <= 0)
-    return AVERROR_EOF;
-
-  size = buf_size > unread ? unread : buf_size;
-  memcpy(dst, q->ptr + q->pos, size);
-  q->pos += size;
-
-  if (q->mode == QUEUE_MODE_SHIFT)
-    queue_deq(q);
-
-  return size;
-}
 
 typedef enum { CTX_MODE_DRAIN, CTX_MODE_BUF } CTX_MODE;
 
@@ -137,7 +67,11 @@ void get_demuxer_context(ErlNifEnv *env, ERL_NIF_TERM term, DemuxerCtx **ctx) {
 }
 
 int read_ioq(void *opaque, uint8_t *buf, int buf_size) {
-  return queue_read((Ioq *)opaque, buf, buf_size);
+  int size;
+
+  if ((size = queue_read((Ioq *)opaque, buf, buf_size)) < 0)
+    return AVERROR_EOF;
+  return size;
 }
 
 int demuxer_read_header(DemuxerCtx *ctx) {

@@ -22,9 +22,9 @@ endif
 
 all: $(LIB_SO)
 
-$(LIB_SO): libav.c
+$(LIB_SO): libav.c ioq.c
 	@ mkdir -p $(PRIV_DIR)
-	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ $< $(LIBS)
+	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ $^ $(LIBS)
 
 clean:
 	rm -f $(LIB_SO)
