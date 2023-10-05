@@ -26,8 +26,11 @@ The term unpack is used here (probably incorrectly) to denote the action of
 copying the packet/frame out of the C world into Elixir.
 
 ## Before you start
-It will probably crash your BEAM at some point, as error handling is far from being complete on the C side. It
-is already pretty stable though.
+- It will probably crash your BEAM at some point, as error handling is far from being complete on the C side. It is already pretty stable though.
+
+- NIFs are supposed to return in <1ms, which does not happen for some functions. I still
+need to measure the impact and determine the dirty scheduler that should be picked for each
+function.
 
 ## Usage
 Check the tests, but in practice this is the flow for decoding audio from a
@@ -35,33 +38,38 @@ multi-track file from file to file in a lazy fashion. Note that callers can
 decide which type of reader implementation they want to provide.
 
 ```elixir
-input = File.open!(input_path, [:raw, :read])
-output = File.stream!(output_path, [:raw, :write])
-
-demuxer = Demuxer.new!(probe_size: 2048, input: input)
-
-read = fn input, size ->
-  resp = IO.binread(input, size)
-  {resp, input}
-end
-
-close = fn input -> File.close(input) end
+demuxer =
+  Demuxer.new_in_memory(%{
+    opaque: File.open!(input_path, [:raw, :read]),
+    read: fn input, size ->
+      resp = IO.binread(input, size)
+      {resp, input}
+    end,
+    close: fn input -> File.close(input) end
+  })
 
 # Detect available stream and select one (or more)
-{streams, demuxer} = Demuxer.streams(demuxer, read)
+{streams, demuxer} = Demuxer.streams(demuxer)
 audio_stream = Enum.find(streams, fn stream -> stream.codec_type == :audio end)
 decoder = Decoder.new!(audio_stream)
 
 packets =
   demuxer
-  |> Demuxer.consume_packets([audio_stream.stream_index], read, close)
+  |> Demuxer.consume_packets([audio_stream.stream_index])
   |> Stream.map(fn {_, packet} -> packet end)
+
+output = File.stream!(output_path, [:raw, :write])
 
 decoder
 |> Decoder.decode_raw(packets)
 |> Enum.into(output)
 ```
 
+The demuxer can also be initialized to read directly from a file, in which
+case it supports all protocols supported by libav itself, such as RTMP, UDP, HLS, local files, ...
+```elixir
+demuxer = Demuxer.new_from_file(input_path)
+```
 And that's it. Compared to using the `ffmpeg` executable directly, here you have access
 to every single packet, which you can re-route, manipulate and process at will.
 
