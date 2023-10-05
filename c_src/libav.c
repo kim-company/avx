@@ -1,51 +1,21 @@
 #include "libavutil/log.h"
 #include "libswresample/swresample.h"
+#include <demuxer.h>
 #include <erl_nif.h>
-#include <ioq.h>
 #include <libavcodec/avcodec.h>
-#include <libavformat/avformat.h>
 #include <libavformat/avio.h>
-#include <string.h>
 
-// The smaller this number:
-// * the less we have to keep in the ioq
-// * the faster we can be at obtaining the header
-// * the easiest for a premature EOS.
 #define DEFAULT_PROBE_SIZE 1024 * 2
 
-ErlNifResourceType *DEMUXER_CTX_RES_TYPE;
+ErlNifResourceType *DEMUXER_RES_TYPE;
 ErlNifResourceType *CODEC_PARAMS_RES_TYPE;
 ErlNifResourceType *DECODER_CTX_RES_TYPE;
 ErlNifResourceType *PACKET_RES_TYPE;
 ErlNifResourceType *FRAME_RES_TYPE;
 
-typedef enum { CTX_MODE_DRAIN, CTX_MODE_BUF } CTX_MODE;
-
-typedef struct {
-  // Used to write binary data coming from membrane and as source for the
-  // AVFormatContext.
-  Ioq *queue;
-  // The context responsible for reading data from the queue. It is
-  // configured to use the read_packet function as source.
-  AVIOContext *io_ctx;
-  // The actual libAV demuxer.
-  AVFormatContext *fmt_ctx;
-
-  CTX_MODE mode;
-
-  int has_header;
-} DemuxerCtx;
-
-void free_demuxer_context_res(ErlNifEnv *env, void *res) {
-  DemuxerCtx **ctx = (DemuxerCtx **)res;
-
-  if ((*ctx)->queue) {
-    free((*ctx)->queue->ptr);
-    avio_context_free(&(*ctx)->io_ctx);
-  }
-
-  avformat_close_input(&(*ctx)->fmt_ctx);
-  free(*ctx);
+void free_demuxer_res(ErlNifEnv *env, void *res) {
+  Demuxer **ctx = (Demuxer **)res;
+  demuxer_free(ctx);
 }
 
 void free_codec_params_res(ErlNifEnv *env, void *res) {
@@ -60,251 +30,212 @@ void get_codec_params(ErlNifEnv *env, ERL_NIF_TERM term,
   *ctx = *params_res;
 }
 
-void get_demuxer_context(ErlNifEnv *env, ERL_NIF_TERM term, DemuxerCtx **ctx) {
-  DemuxerCtx **ctx_res;
-  enif_get_resource(env, term, DEMUXER_CTX_RES_TYPE, (void *)&ctx_res);
+void enif_get_demuxer(ErlNifEnv *env, ERL_NIF_TERM term, Demuxer **ctx) {
+  Demuxer **ctx_res;
+  enif_get_resource(env, term, DEMUXER_RES_TYPE, (void *)&ctx_res);
   *ctx = *ctx_res;
 }
 
-int read_ioq(void *opaque, uint8_t *buf, int buf_size) {
-  int size;
-
-  if ((size = queue_read((Ioq *)opaque, buf, buf_size)) < 0)
-    return AVERROR_EOF;
-  return size;
+ERL_NIF_TERM enif_make_error(ErlNifEnv *env, char *err) {
+  return enif_make_tuple2(env, enif_make_atom(env, "error"),
+                          enif_make_string(env, err, ERL_NIF_UTF8));
 }
 
-int demuxer_read_header(DemuxerCtx *ctx) {
-  AVIOContext *io_ctx;
-  AVFormatContext *fmt_ctx;
-  void *io_buffer;
-  int errnum;
-  int ret;
-
-  // TODO can we avoid allocating this buffer each time we do a read attempt?
-  io_buffer = av_malloc(ctx->queue->size);
-  // Context that reads from queue and uses io_buffer as scratch space.
-  io_ctx = avio_alloc_context(io_buffer, ctx->queue->size, 0, ctx->queue,
-                              &read_ioq, NULL, NULL);
-  io_ctx->seekable = 0;
-
-  fmt_ctx = avformat_alloc_context();
-  fmt_ctx->pb = io_ctx;
-  fmt_ctx->probesize = ctx->queue->size;
-
-  if ((errnum = avformat_open_input(&fmt_ctx, NULL, NULL, NULL)))
-    goto open_error;
-
-  if ((errnum = avformat_find_stream_info(fmt_ctx, NULL)) < 0)
-    goto open_error;
-
-  ctx->has_header = 1;
-  ctx->io_ctx = io_ctx;
-  ctx->fmt_ctx = fmt_ctx;
-
-  // From now on, the queue will not grow but rather override data
-  // read by the io_ctx. Dequeue every information read by the
-  queue_deq(ctx->queue);
-  ctx->queue->mode = QUEUE_MODE_SHIFT;
-
-  return errnum;
-
-open_error:
-  avio_context_free(&io_ctx);
-  avformat_close_input(&fmt_ctx);
-
-  queue_grow(ctx->queue, 2);
-  ctx->queue->pos = 0;
-
-  return errnum;
+ERL_NIF_TERM enif_make_av_error(ErlNifEnv *env, int errn) {
+  char err[128];
+  av_strerror(errn, err, sizeof(err));
+  return enif_make_error(env, err);
 }
 
-ERL_NIF_TERM demuxer_alloc_from_file(ErlNifEnv *env, int argc,
-                                     const ERL_NIF_TERM argv[]) {
-  DemuxerCtx *ctx;
-  AVFormatContext *fmt_ctx;
+ERL_NIF_TERM enif_make_demuxer_res(ErlNifEnv *env, Demuxer *demuxer) {
+  // Make the resource take ownership on the context.
+  Demuxer **ctx_res = enif_alloc_resource(DEMUXER_RES_TYPE, sizeof(Demuxer *));
+  *ctx_res = demuxer;
+
+  ERL_NIF_TERM term = enif_make_resource(env, ctx_res);
+
+  // This is done to allow the erlang garbage collector to take care
+  // of freeing this resource when needed.
+  enif_release_resource(ctx_res);
+
+  return term;
+}
+
+ERL_NIF_TERM enif_demuxer_alloc_from_file(ErlNifEnv *env, int argc,
+                                          const ERL_NIF_TERM argv[]) {
+  Demuxer *ctx;
   ErlNifBinary binary;
   char *path;
+  int errn;
 
   enif_inspect_binary(env, argv[0], &binary);
   path = (char *)malloc(binary.size);
   memcpy(path, binary.data, binary.size);
 
-  fmt_ctx = avformat_alloc_context();
-  avformat_open_input(&fmt_ctx, path, NULL, NULL);
-  free(path);
+  if ((errn = demuxer_alloc_from_file(&ctx, path)) < 0)
+    return enif_make_av_error(env, errn);
 
-  avformat_find_stream_info(fmt_ctx, NULL);
-
-  ctx = (DemuxerCtx *)malloc(sizeof(DemuxerCtx));
-  ctx->has_header = 1;
-  ctx->fmt_ctx = fmt_ctx;
-
-  // Make the resource take ownership on the context.
-  DemuxerCtx **ctx_res =
-      enif_alloc_resource(DEMUXER_CTX_RES_TYPE, sizeof(DemuxerCtx *));
-  *ctx_res = ctx;
-
-  ERL_NIF_TERM term = enif_make_resource(env, ctx_res);
-
-  // This is done to allow the erlang garbage collector to take care
-  // of freeing this resource when needed.
-  enif_release_resource(ctx_res);
-
-  return term;
+  return enif_make_demuxer_res(env, ctx);
 }
 
-ERL_NIF_TERM demuxer_alloc(ErlNifEnv *env, int argc,
-                           const ERL_NIF_TERM argv[]) {
-  int probe_size;
+ERL_NIF_TERM enif_demuxer_alloc_in_mem(ErlNifEnv *env, int argc,
+                                       const ERL_NIF_TERM argv[]) {
+  int probe_size, errn;
+  Demuxer *ctx;
 
   enif_get_int(env, argv[0], &probe_size);
   if (probe_size <= 0)
     probe_size = DEFAULT_PROBE_SIZE;
 
-  Ioq *queue = (Ioq *)malloc(sizeof(Ioq));
-  queue->ptr = malloc(probe_size);
-  queue->mode = QUEUE_MODE_GROW;
-  queue->size = probe_size;
-  queue->pos = 0;
-  queue->buf_end = 0;
+  if ((errn = demuxer_alloc_in_mem(&ctx, probe_size)) < 0)
+    return enif_make_av_error(env, errn);
 
-  DemuxerCtx *ctx = (DemuxerCtx *)malloc(sizeof(DemuxerCtx));
-  ctx->queue = queue;
-  ctx->mode = CTX_MODE_BUF;
-  ctx->has_header = 0;
-
-  // Make the resource take ownership on the context.
-  DemuxerCtx **ctx_res =
-      enif_alloc_resource(DEMUXER_CTX_RES_TYPE, sizeof(DemuxerCtx *));
-  *ctx_res = ctx;
-
-  ERL_NIF_TERM term = enif_make_resource(env, ctx_res);
-
-  // This is done to allow the erlang garbage collector to take care
-  // of freeing this resource when needed.
-  enif_release_resource(ctx_res);
-
-  return term;
+  return enif_make_demuxer_res(env, ctx);
 }
 
-ERL_NIF_TERM demuxer_add_data(ErlNifEnv *env, int argc,
-                              const ERL_NIF_TERM argv[]) {
-  DemuxerCtx *ctx;
+ERL_NIF_TERM enif_demuxer_add_data(ErlNifEnv *env, int argc,
+                                   const ERL_NIF_TERM argv[]) {
+  Demuxer *ctx;
   ErlNifBinary binary;
+  int errn;
 
-  get_demuxer_context(env, argv[0], &ctx);
-
-  // This should not happen if the demuxer is reading
-  // data from a file.
-  if (!ctx->queue)
-    return enif_make_tuple2(
-        env, enif_make_atom(env, "error"),
-        enif_make_string(env, "demuxer is reading from a file", ERL_NIF_UTF8));
-
+  enif_get_demuxer(env, argv[0], &ctx);
   enif_inspect_binary(env, argv[1], &binary);
 
-  // Indicates EOS.
-  if (!binary.data) {
-    ctx->mode = CTX_MODE_DRAIN;
-    return enif_make_atom(env, "ok");
-  }
-
-  // Copy the data in the buffer.
-  queue_copy(ctx->queue, binary.data, binary.size);
-
-  // Make an attemp reading the header only when the ioq buffer is filled.
-  if (!ctx->has_header && queue_is_filled(ctx->queue))
-    demuxer_read_header(ctx);
+  if ((errn = demuxer_add_data(ctx, binary.data, binary.size)) < 0)
+    return enif_make_error(env, "add data not allowed");
 
   return enif_make_atom(env, "ok");
 }
 
-ERL_NIF_TERM demuxer_is_ready(ErlNifEnv *env, int argc,
-                              const ERL_NIF_TERM argv[]) {
-  DemuxerCtx *ctx;
-  get_demuxer_context(env, argv[0], &ctx);
+ERL_NIF_TERM enif_demuxer_is_ready(ErlNifEnv *env, int argc,
+                                   const ERL_NIF_TERM argv[]) {
+  Demuxer *ctx;
+  enif_get_demuxer(env, argv[0], &ctx);
 
-  return ctx->has_header ? enif_make_atom(env, "true")
-                         : enif_make_atom(env, "false");
+  return enif_make_int(env, demuxer_is_ready(ctx));
 }
-ERL_NIF_TERM demuxer_read_packet_from_queue(ErlNifEnv *env, DemuxerCtx *ctx) {
+
+ERL_NIF_TERM enif_demuxer_read_packet(ErlNifEnv *env, int argc,
+                                      const ERL_NIF_TERM argv[]) {
+  Demuxer *ctx;
   AVPacket *packet;
-  int errnum, freespace;
-  char err[256];
+  int ret;
 
   packet = av_packet_alloc();
 
-  freespace = queue_freespace(ctx->queue);
+  enif_get_demuxer(env, argv[0], &ctx);
 
-  if (freespace > 0 && ctx->mode == CTX_MODE_BUF)
-    return enif_make_tuple2(env, enif_make_atom(env, "demand"),
-                            enif_make_long(env, freespace));
-
-  if ((errnum = av_read_frame(ctx->fmt_ctx, packet)) < 0) {
-    if (errnum == AVERROR_EOF)
+  if ((ret = demuxer_read_packet(ctx, packet)) != 0) {
+    if (ret == AVERROR_EOF)
       return enif_make_atom(env, "eof");
-
-    av_strerror(errnum, err, sizeof(err));
-    return enif_make_tuple2(env, enif_make_atom(env, "error"),
-                            enif_make_string(env, err, ERL_NIF_UTF8));
+    if (ret < 0)
+      return enif_make_av_error(env, ret);
+    if (ret > 0)
+      return enif_make_tuple2(env, enif_make_atom(env, "demand"),
+                              enif_make_long(env, ret));
   }
 
   // Make the resource
-  AVPacket **packet_res =
-      enif_alloc_resource(PACKET_RES_TYPE, sizeof(AVPacket *));
-  *packet_res = packet;
+  AVPacket **res = enif_alloc_resource(PACKET_RES_TYPE, sizeof(AVPacket *));
+  *res = packet;
 
-  ERL_NIF_TERM res_term = enif_make_resource(env, packet_res);
+  ERL_NIF_TERM term = enif_make_resource(env, res);
 
   // This is done to allow the erlang garbage collector to take care
   // of freeing this resource when needed.
-  enif_release_resource(packet_res);
+  enif_release_resource(res);
 
-  return enif_make_tuple2(env, enif_make_atom(env, "ok"), res_term);
+  return enif_make_tuple2(env, enif_make_atom(env, "ok"), term);
 }
 
-ERL_NIF_TERM demuxer_read_packet_from_file(ErlNifEnv *env, DemuxerCtx *ctx) {
-  AVPacket *packet;
-  int errnum, freespace;
-  char err[256];
+ERL_NIF_TERM enif_make_stream_map(ErlNifEnv *env, AVStream *stream) {
+  ERL_NIF_TERM codec_term;
+  ErlNifBinary *binary;
+  AVCodecParameters *params = NULL;
+  const char *codec_name;
 
-  packet = av_packet_alloc();
+  // Parameters are used to preserve as much information
+  // as possible when creating a new Codec. We're making
+  // a copy to ensure we own this data.
+  // TODO: DO WE?
 
-  if ((errnum = av_read_frame(ctx->fmt_ctx, packet)) < 0) {
-    if (errnum == AVERROR_EOF)
-      return enif_make_atom(env, "eof");
-
-    av_strerror(errnum, err, sizeof(err));
-    return enif_make_tuple2(env, enif_make_atom(env, "error"),
-                            enif_make_string(env, err, ERL_NIF_UTF8));
-  }
+  params = avcodec_parameters_alloc();
+  avcodec_parameters_copy(params, stream->codecpar);
 
   // Make the resource
-  AVPacket **packet_res =
-      enif_alloc_resource(PACKET_RES_TYPE, sizeof(AVPacket *));
-  *packet_res = packet;
+  AVCodecParameters **codec_params_res =
+      enif_alloc_resource(CODEC_PARAMS_RES_TYPE, sizeof(AVCodecParameters *));
+  *codec_params_res = params;
 
-  ERL_NIF_TERM res_term = enif_make_resource(env, packet_res);
+  ERL_NIF_TERM res_term = enif_make_resource(env, codec_params_res);
 
   // This is done to allow the erlang garbage collector to take care
   // of freeing this resource when needed.
-  enif_release_resource(packet_res);
+  enif_release_resource(codec_params_res);
 
-  return enif_make_tuple2(env, enif_make_atom(env, "ok"), res_term);
+  // Create the returned map of information.
+  codec_name = avcodec_get_name(params->codec_id);
+
+  ERL_NIF_TERM map;
+  map = enif_make_new_map(env);
+
+  ERL_NIF_TERM codec_type;
+  switch (params->codec_type) {
+  case AVMEDIA_TYPE_AUDIO:
+    codec_type = enif_make_atom(env, "audio");
+    break;
+  case AVMEDIA_TYPE_VIDEO:
+    codec_type = enif_make_atom(env, "video");
+    break;
+  default:
+    codec_type = enif_make_atom(env, "und");
+    break;
+  }
+
+  enif_make_map_put(env, map, enif_make_atom(env, "codec_id"),
+                    enif_make_int(env, params->codec_id), &map);
+  enif_make_map_put(env, map, enif_make_atom(env, "codec_type"), codec_type,
+                    &map);
+  enif_make_map_put(env, map, enif_make_atom(env, "codec_name"),
+                    enif_make_string(env, codec_name, ERL_NIF_UTF8), &map);
+  enif_make_map_put(env, map, enif_make_atom(env, "codec_params"), res_term,
+                    &map);
+  enif_make_map_put(env, map, enif_make_atom(env, "stream_index"),
+                    enif_make_int(env, stream->index), &map);
+  enif_make_map_put(env, map, enif_make_atom(env, "timebase_num"),
+                    enif_make_int(env, stream->time_base.num), &map);
+  enif_make_map_put(env, map, enif_make_atom(env, "timebase_den"),
+                    enif_make_int(env, stream->time_base.den), &map);
+
+  // TODO
+  // Expand the information available to Elixir: here we can only select a
+  // stream by index and codec, quality or language should be available too.
+  return map;
 }
 
-ERL_NIF_TERM demuxer_read_packet(ErlNifEnv *env, int argc,
-                                 const ERL_NIF_TERM argv[]) {
-  DemuxerCtx *ctx;
+ERL_NIF_TERM enif_demuxer_read_streams(ErlNifEnv *env, int argc,
+                                       const ERL_NIF_TERM argv[]) {
+  Demuxer *ctx;
+  ERL_NIF_TERM *codecs;
+  AVStream **streams;
+  int errn, *size;
 
-  get_demuxer_context(env, argv[0], &ctx);
-  if (ctx->queue)
-    return demuxer_read_packet_from_queue(env, ctx);
-  return demuxer_read_packet_from_file(env, ctx);
+  enif_get_demuxer(env, argv[0], &ctx);
+
+  if ((errn = demuxer_read_streams(ctx, streams, size)) < 0)
+    return enif_make_av_error(env, errn);
+
+  codecs = calloc(*size, sizeof(ERL_NIF_TERM));
+  for (int i = 0; i < *size; i++) {
+    codecs[i] = enif_make_stream_map(env, streams[i]);
+  }
+
+  return enif_make_tuple2(env, enif_make_atom(env, "ok"),
+                          enif_make_list_from_array(env, codecs, *size));
 }
 
-int get_packet(ErlNifEnv *env, ERL_NIF_TERM term, AVPacket **packet) {
+int enif_get_packet(ErlNifEnv *env, ERL_NIF_TERM term, AVPacket **packet) {
   AVPacket **packet_res;
   int ret;
 
@@ -314,12 +245,12 @@ int get_packet(ErlNifEnv *env, ERL_NIF_TERM term, AVPacket **packet) {
   return ret;
 }
 
-ERL_NIF_TERM packet_unpack(ErlNifEnv *env, int argc,
-                           const ERL_NIF_TERM argv[]) {
+ERL_NIF_TERM enif_packet_unpack(ErlNifEnv *env, int argc,
+                                const ERL_NIF_TERM argv[]) {
   AVPacket *packet;
   ERL_NIF_TERM map, data;
 
-  get_packet(env, argv[0], &packet);
+  enif_get_packet(env, argv[0], &packet);
 
   void *ptr = enif_make_new_binary(env, packet->size, &data);
   memcpy(ptr, packet->data, packet->size);
@@ -334,106 +265,12 @@ ERL_NIF_TERM packet_unpack(ErlNifEnv *env, int argc,
   return map;
 }
 
-ERL_NIF_TERM demuxer_streams(ErlNifEnv *env, int argc,
-                             const ERL_NIF_TERM argv[]) {
-  DemuxerCtx *ctx;
-  ERL_NIF_TERM *codecs;
-  int errnum;
-  char err[256];
+ERL_NIF_TERM enif_demuxer_demand(ErlNifEnv *env, int argc,
+                                 const ERL_NIF_TERM argv[]) {
+  Demuxer *ctx;
+  enif_get_demuxer(env, argv[0], &ctx);
 
-  get_demuxer_context(env, argv[0], &ctx);
-
-  // Called on EOS: we're not ready, meaning that we did not get
-  // the amount of data we wanted, but we may still be able to
-  // obtain the streams.
-  if (!ctx->has_header) {
-    if ((errnum = demuxer_read_header(ctx))) {
-      av_strerror(errnum, err, sizeof(err));
-      return enif_make_tuple2(env, enif_make_atom(env, "error"),
-                              enif_make_string(env, err, ERL_NIF_UTF8));
-    }
-  }
-
-  codecs = calloc(ctx->fmt_ctx->nb_streams, sizeof(ERL_NIF_TERM));
-  for (int i = 0; i < ctx->fmt_ctx->nb_streams; i++) {
-    ERL_NIF_TERM codec_term;
-    ErlNifBinary *binary;
-    AVStream *av_stream;
-    AVCodecParameters *params = NULL;
-    const char *codec_name;
-
-    av_stream = ctx->fmt_ctx->streams[i];
-
-    // Parameters are used to preserve as much information
-    // as possible when creating a new Codec. We're making
-    // a copy to ensure we own this data.
-
-    params = avcodec_parameters_alloc();
-    avcodec_parameters_copy(params, av_stream->codecpar);
-
-    // Make the resource
-    AVCodecParameters **codec_params_res =
-        enif_alloc_resource(CODEC_PARAMS_RES_TYPE, sizeof(AVCodecParameters *));
-    *codec_params_res = params;
-
-    ERL_NIF_TERM res_term = enif_make_resource(env, codec_params_res);
-
-    // This is done to allow the erlang garbage collector to take care
-    // of freeing this resource when needed.
-    enif_release_resource(codec_params_res);
-
-    // Create the returned map of information.
-    codec_name = avcodec_get_name(params->codec_id);
-
-    ERL_NIF_TERM map;
-    map = enif_make_new_map(env);
-
-    ERL_NIF_TERM codec_type;
-    switch (params->codec_type) {
-    case AVMEDIA_TYPE_AUDIO:
-      codec_type = enif_make_atom(env, "audio");
-      break;
-    case AVMEDIA_TYPE_VIDEO:
-      codec_type = enif_make_atom(env, "video");
-      break;
-    default:
-      codec_type = enif_make_atom(env, "und");
-      break;
-    }
-
-    enif_make_map_put(env, map, enif_make_atom(env, "codec_id"),
-                      enif_make_int(env, params->codec_id), &map);
-    enif_make_map_put(env, map, enif_make_atom(env, "codec_type"), codec_type,
-                      &map);
-    enif_make_map_put(env, map, enif_make_atom(env, "codec_name"),
-                      enif_make_string(env, codec_name, ERL_NIF_UTF8), &map);
-    enif_make_map_put(env, map, enif_make_atom(env, "codec_params"), res_term,
-                      &map);
-    enif_make_map_put(env, map, enif_make_atom(env, "stream_index"),
-                      enif_make_int(env, av_stream->index), &map);
-    enif_make_map_put(env, map, enif_make_atom(env, "timebase_num"),
-                      enif_make_int(env, av_stream->time_base.num), &map);
-    enif_make_map_put(env, map, enif_make_atom(env, "timebase_den"),
-                      enif_make_int(env, av_stream->time_base.den), &map);
-
-    // TODO
-    // Expand the information available to Elixir: here we can only select a
-    // stream by index and codec, quality or language should be available too.
-
-    codecs[i] = map;
-  }
-
-  return enif_make_tuple2(
-      env, enif_make_atom(env, "ok"),
-      enif_make_list_from_array(env, codecs, ctx->fmt_ctx->nb_streams));
-}
-
-ERL_NIF_TERM demuxer_demand(ErlNifEnv *env, int argc,
-                            const ERL_NIF_TERM argv[]) {
-  DemuxerCtx *ctx;
-  get_demuxer_context(env, argv[0], &ctx);
-
-  return enif_make_int(env, ctx->queue->size - ctx->queue->buf_end);
+  return enif_make_int(env, demuxer_demand(ctx));
 }
 
 typedef struct {
@@ -577,7 +414,7 @@ ERL_NIF_TERM decoder_stream_format(ErlNifEnv *env, int argc,
 ERL_NIF_TERM packet_stream_index(ErlNifEnv *env, int argc,
                                  const ERL_NIF_TERM argv[]) {
   AVPacket *packet;
-  get_packet(env, argv[0], &packet);
+  enif_get_packet(env, argv[0], &packet);
   return enif_make_int(env, packet->stream_index);
 }
 
@@ -593,7 +430,7 @@ ERL_NIF_TERM decoder_add_data(ErlNifEnv *env, int argc,
   int ret;
 
   get_decoder_context(env, argv[0], &ctx);
-  if ((ret = get_packet(env, argv[1], &packet))) {
+  if ((ret = enif_get_packet(env, argv[1], &packet))) {
     avcodec_send_packet(ctx->codec_ctx, packet);
   } else {
     // This is a "drain" packet, i.e. NULL.
@@ -717,8 +554,8 @@ int load(ErlNifEnv *env, void **priv_data, ERL_NIF_TERM load_info) {
   av_log_set_level(AV_LOG_QUIET);
 
   int flags = ERL_NIF_RT_CREATE | ERL_NIF_RT_TAKEOVER;
-  DEMUXER_CTX_RES_TYPE = enif_open_resource_type(
-      env, NULL, "demuxer_ctx", free_demuxer_context_res, flags, NULL);
+  DEMUXER_RES_TYPE = enif_open_resource_type(env, NULL, "demuxer_ctx",
+                                             free_demuxer_res, flags, NULL);
 
   CODEC_PARAMS_RES_TYPE = enif_open_resource_type(
       env, NULL, "codec_params", free_codec_params_res, flags, NULL);
@@ -741,20 +578,20 @@ static ErlNifFunc nif_funcs[] = {
 
     // {erl_function_name, erl_function_arity, c_function}
     // Demuxer
-    {"demuxer_alloc", 1, demuxer_alloc},
-    {"demuxer_alloc_from_file", 1, demuxer_alloc_from_file},
-    {"demuxer_add_data", 2, demuxer_add_data},
-    {"demuxer_is_ready", 1, demuxer_is_ready},
-    {"demuxer_demand", 1, demuxer_demand},
-    {"demuxer_streams", 1, demuxer_streams},
-    {"demuxer_read_packet", 1, demuxer_read_packet},
+    {"demuxer_alloc_from_file", 1, enif_demuxer_alloc_from_file},
+    {"demuxer_alloc", 1, enif_demuxer_alloc_in_mem},
+    {"demuxer_streams", 1, enif_demuxer_read_streams},
+    {"demuxer_read_packet", 1, enif_demuxer_read_packet},
+    {"demuxer_add_data", 2, enif_demuxer_add_data},
+    {"demuxer_is_ready", 1, enif_demuxer_is_ready},
+    {"demuxer_demand", 1, enif_demuxer_demand},
     // Decoder
     {"decoder_alloc_context", 1, decoder_alloc_context},
     {"decoder_stream_format", 1, decoder_stream_format},
     {"decoder_add_data", 2, decoder_add_data},
     // General
     {"packet_stream_index", 1, packet_stream_index},
-    {"packet_unpack", 1, packet_unpack},
+    {"packet_unpack", 1, enif_packet_unpack},
     {"frame_unpack", 1, frame_unpack},
 };
 
