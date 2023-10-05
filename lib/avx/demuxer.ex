@@ -144,6 +144,7 @@ defmodule AVx.Demuxer do
     |> Stream.map(fn {_, packet} -> packet end)
     |> Stream.filter(fn packet -> packet != nil end)
     |> Stream.map(&Packet.unpack/1)
+    |> Stream.map(fn packet -> packet.data end)
   end
 
   defp read_input(state, demand \\ nil) do
