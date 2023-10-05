@@ -198,6 +198,8 @@ ERL_NIF_TERM demuxer_alloc_from_file(ErlNifEnv *env, int argc,
 
   fmt_ctx = avformat_alloc_context();
   avformat_open_input(&fmt_ctx, path, NULL, NULL);
+  free(path);
+
   avformat_find_stream_info(fmt_ctx, NULL);
 
   ctx = (DemuxerCtx *)malloc(sizeof(DemuxerCtx));
