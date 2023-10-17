@@ -18,7 +18,6 @@ defmodule AVx.DemuxerTest do
       assert_packets(demuxer, [stream.stream_index], info)
     end
 
-    @tag skip: true
     test "with bin read from memory" do
       demuxer =
         Demuxer.new_in_memory(%{
@@ -38,7 +37,6 @@ defmodule AVx.DemuxerTest do
       assert_packets(demuxer, [stream.stream_index], info)
     end
 
-    @tag skip: true
     test "with MailboxReader" do
       pid = start_link_supervised!(MailboxReader)
 

@@ -16,8 +16,6 @@ int demuxer_file_alloc(DemuxerFile **ctx, char *path) {
   if ((errn = avformat_open_input(&fmt_ctx, path, NULL, NULL)) < 0)
     return errn;
 
-  free(path);
-
   if ((errn = avformat_find_stream_info(fmt_ctx, NULL)) < 0)
     goto fail;
 
@@ -36,10 +34,13 @@ int demuxer_file_read_packet(void *ctx, AVPacket *packet) {
   return av_read_frame(((DemuxerFile *)ctx)->fmt_ctx, packet);
 }
 
-int demuxer_file_read_streams(void *ctx, AVStream **streams, int *size) {
-  DemuxerFile *demuxer = (DemuxerFile *)ctx;
-  *size = demuxer->fmt_ctx->nb_streams;
-  *streams = *demuxer->fmt_ctx->streams;
+int demuxer_file_read_streams(void *opaque, AVStream **streams,
+                              unsigned int *size) {
+  DemuxerFile *ctx = (DemuxerFile *)opaque;
+
+  *size = (int)ctx->fmt_ctx->nb_streams;
+  *streams = *ctx->fmt_ctx->streams;
+
   return 0;
 }
 
@@ -168,7 +169,8 @@ int demuxer_mem_is_ready(void *opaque) {
   return ((DemuxerMem *)opaque)->has_header;
 }
 
-int demuxer_mem_read_streams(void *opaque, AVStream **streams, int *size) {
+int demuxer_mem_read_streams(void *opaque, AVStream **streams,
+                             unsigned int *size) {
   int errn;
   DemuxerMem *ctx = (DemuxerMem *)opaque;
 
@@ -220,7 +222,7 @@ struct Demuxer {
 
   int (*read_packet)(void *, AVPacket *);
   int (*add_data)(void *, void *, int);
-  int (*read_streams)(void *, AVStream **, int *);
+  int (*read_streams)(void *, AVStream **, unsigned int *);
   int (*is_ready)(void *);
   int (*demand)(void *);
   void (*free)(void **);
@@ -234,8 +236,8 @@ int demuxer_alloc_from_file(Demuxer **demuxer, char *path) {
   if ((errn = demuxer_file_alloc(&ctx, path)) < 0)
     return errn;
 
-  idemuxer = (Demuxer *)malloc(sizeof(Demuxer *));
-  idemuxer->opaque = (void *)ctx;
+  idemuxer = (Demuxer *)malloc(sizeof(Demuxer));
+  idemuxer->opaque = ctx;
   idemuxer->read_packet = &demuxer_file_read_packet;
   idemuxer->add_data = &default_add;
   idemuxer->read_streams = &demuxer_file_read_streams;
@@ -255,7 +257,7 @@ int demuxer_alloc_in_mem(Demuxer **demuxer, int probe_size) {
   if ((errn = demuxer_mem_alloc(&ctx, probe_size)) < 0)
     return errn;
 
-  idemuxer = (Demuxer *)malloc(sizeof(Demuxer *));
+  idemuxer = (Demuxer *)malloc(sizeof(Demuxer));
   idemuxer->opaque = (void *)ctx;
   idemuxer->read_packet = &demuxer_mem_read_packet;
   idemuxer->add_data = &demuxer_mem_add_data;
@@ -276,7 +278,7 @@ int demuxer_add_data(Demuxer *ctx, void *data, int size) {
   return ctx->add_data(ctx->opaque, data, size);
 }
 
-int demuxer_read_streams(Demuxer *ctx, AVStream **streams, int *size) {
+int demuxer_read_streams(Demuxer *ctx, AVStream **streams, unsigned int *size) {
   return ctx->read_streams(ctx->opaque, streams, size);
 }
 

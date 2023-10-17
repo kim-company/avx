@@ -216,23 +216,24 @@ ERL_NIF_TERM enif_make_stream_map(ErlNifEnv *env, AVStream *stream) {
 
 ERL_NIF_TERM enif_demuxer_read_streams(ErlNifEnv *env, int argc,
                                        const ERL_NIF_TERM argv[]) {
-  Demuxer *ctx;
   ERL_NIF_TERM *codecs;
-  AVStream **streams;
-  int errn, *size;
+  Demuxer *ctx;
+  AVStream *streams;
+  unsigned int size;
+  int errn;
 
   enif_get_demuxer(env, argv[0], &ctx);
 
-  if ((errn = demuxer_read_streams(ctx, streams, size)) < 0)
+  if ((errn = demuxer_read_streams(ctx, &streams, &size)) < 0)
     return enif_make_av_error(env, errn);
 
-  codecs = calloc(*size, sizeof(ERL_NIF_TERM));
-  for (int i = 0; i < *size; i++) {
-    codecs[i] = enif_make_stream_map(env, streams[i]);
+  codecs = calloc(size, sizeof(ERL_NIF_TERM));
+  for (int i = 0; i < size; i++) {
+    codecs[i] = enif_make_stream_map(env, &streams[i]);
   }
 
   return enif_make_tuple2(env, enif_make_atom(env, "ok"),
-                          enif_make_list_from_array(env, codecs, *size));
+                          enif_make_list_from_array(env, codecs, size));
 }
 
 int enif_get_packet(ErlNifEnv *env, ERL_NIF_TERM term, AVPacket **packet) {

@@ -47,7 +47,7 @@ defmodule AVx.Demuxer do
   """
   @spec streams(t()) :: {[stream()], t()}
   def streams(state = %{reader: reader}) when reader != nil do
-    if NIF.demuxer_is_ready(state.demuxer) or state.eof.input do
+    if is_ready(state) or state.eof.input do
       read_streams(state)
     else
       state
@@ -58,6 +58,10 @@ defmodule AVx.Demuxer do
 
   def streams(state) do
     read_streams(state)
+  end
+
+  defp is_ready(state) do
+    NIF.demuxer_is_ready(state.demuxer) != 0
   end
 
   @doc """
