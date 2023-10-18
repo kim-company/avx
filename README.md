@@ -37,16 +37,11 @@ Check the tests, but in practice this is the flow for decoding audio from a
 multi-track file from file to file in a lazy fashion. Note that callers can
 decide which type of reader implementation they want to provide.
 
+If initialized directly from a file, the demuxer
+supports all protocols supported by libav itself, such as RTMP, UDP, HLS, local files, ...
+
 ```elixir
-demuxer =
-  Demuxer.new_in_memory(%{
-    opaque: File.open!(input_path, [:raw, :read]),
-    read: fn input, size ->
-      resp = IO.binread(input, size)
-      {resp, input}
-    end,
-    close: fn input -> File.close(input) end
-  })
+demuxer = Demuxer.new_from_file(input_path)
 
 # Detect available stream and select one (or more)
 {streams, demuxer} = Demuxer.streams(demuxer)
@@ -65,10 +60,21 @@ decoder
 |> Enum.into(output)
 ```
 
-The demuxer can also be initialized to read directly from a file, in which
-case it supports all protocols supported by libav itself, such as RTMP, UDP, HLS, local files, ...
+An experimental feature: the demuxer can be initialized with a custom reader,
+which might send data from mailbox, a file and other custom patterns.
+
+This is an example reading from a file.
 ```elixir
-demuxer = Demuxer.new_from_file(input_path)
+demuxer =
+  Demuxer.new_in_memory(%{
+    opaque: File.open!(input_path, [:raw, :read]),
+    read: fn input, size ->
+      resp = IO.binread(input, size)
+      {resp, input}
+    end,
+    close: fn input -> File.close(input) end
+  })
+
 ```
 And that's it. Compared to using the `ffmpeg` executable directly, here you have access
 to every single packet, which you can re-route, manipulate and process at will.
