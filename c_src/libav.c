@@ -72,9 +72,11 @@ ERL_NIF_TERM enif_demuxer_alloc_from_file(ErlNifEnv *env, int argc,
   path = (char *)malloc(binary.size);
   memcpy(path, binary.data, binary.size);
 
-  if ((errn = demuxer_alloc_from_file(&ctx, path)) < 0)
-    return enif_make_av_error(env, errn);
+  errn = demuxer_alloc_from_file(&ctx, path);
+  free(path);
 
+  if (errn < 0)
+    return enif_make_av_error(env, errn);
   return enif_make_demuxer_res(env, ctx);
 }
 

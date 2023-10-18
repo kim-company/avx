@@ -1,5 +1,7 @@
 defmodule AVx.Demuxer do
   alias AVx.{NIF, Packet}
+  require Logger
+
   @default_probe_size 2048
 
   @type read :: (any(), size :: pos_integer -> {:eof | iodata(), any()})
@@ -71,7 +73,8 @@ defmodule AVx.Demuxer do
   Returns an enumerable of AVx.Packet.
   """
   @spec consume_packets(t(), [pos_integer()]) :: Enumerable.t()
-  def consume_packets(state = %{reader: reader}, stream_indexes) when reader != nil do
+  def consume_packets(state = %{reader: reader}, stream_indexes)
+      when reader != nil and is_list(stream_indexes) do
     # -1 is used as an indicator for the last packet, which must
     # be delivered to the decoder to put it into drain mode.
     accepted_streams = stream_indexes ++ [-1]
@@ -85,7 +88,8 @@ defmodule AVx.Demuxer do
 
         state ->
           case NIF.demuxer_read_packet(state.demuxer) do
-            {:error, _reason} ->
+            {:error, reason} ->
+              Logger.error("Demuxer read packet failed: #{inspect(to_string(reason))}")
               {[nil], %{state | eof: %{state.eof | demuxer: true}}}
 
             :eof ->
@@ -99,14 +103,13 @@ defmodule AVx.Demuxer do
           end
       end,
       fn
-        {:error, reason} -> raise reason
         state -> state.reader.close.(state.reader.opaque)
       end
     )
     |> filter_packets(accepted_streams)
   end
 
-  def consume_packets(state, stream_indexes) do
+  def consume_packets(state, stream_indexes) when is_list(stream_indexes) do
     # -1 is used as an indicator for the last packet, which must
     # be delivered to the decoder to put it into drain mode.
     accepted_streams = stream_indexes ++ [-1]
@@ -121,7 +124,8 @@ defmodule AVx.Demuxer do
           # There is no demand when the demuxer is taking care of
           # the input internally.
           case NIF.demuxer_read_packet(state.demuxer) do
-            {:error, _reason} ->
+            {:error, reason} ->
+              Logger.error("Demuxer read packet failed: #{inspect(to_string(reason))}")
               {[nil], %{state | eof: %{state.eof | demuxer: true}}}
 
             :eof ->
