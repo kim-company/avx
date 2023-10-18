@@ -34,6 +34,12 @@ defmodule AVx.Demuxer do
   defstruct [:demuxer, :reader, :file_path, eof: %{input: false, demuxer: false}]
 
   @spec new_in_memory(reader()) :: t()
+  @doc """
+  Allocates a demuxer that reads that from the provided reader instead
+  of a file. For a reader implementation, check the MailboxReader.
+
+  WARNING: this is an experimental feature
+  """
   def new_in_memory(reader) do
     probe_size = Map.get(reader, :probe_size, @default_probe_size)
     %__MODULE__{demuxer: NIF.demuxer_alloc(probe_size), reader: reader}
