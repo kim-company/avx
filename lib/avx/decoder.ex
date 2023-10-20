@@ -15,7 +15,7 @@ defmodule AVx.Decoder do
   @spec new!(AVx.Demuxer.stream()) :: t()
   def new!(stream) do
     %__MODULE__{
-      decoder: NIF.decoder_alloc_context(stream)
+      decoder: NIF.decoder_alloc(stream)
     }
   end
 

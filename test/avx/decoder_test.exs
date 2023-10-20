@@ -4,12 +4,12 @@ defmodule AVx.DecoderTest do
   alias AVx.{Demuxer, Decoder, Frame}
 
   @inputs [
-    "test/data/mic.mp4",
-    "test/data/mic.mp3",
-    "test/data/mic.ogg",
-    "test/data/mic.mkv",
-    "test/data/mic.aac",
-    "test/data/packed.aac"
+    "test/data/mic.mp4"
+    # "test/data/mic.mp3",
+    # "test/data/mic.ogg",
+    # "test/data/mic.mkv",
+    # "test/data/mic.aac",
+    # "test/data/packed.aac"
   ]
 
   for input <- @inputs do

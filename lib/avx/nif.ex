@@ -34,8 +34,8 @@ defmodule AVx.NIF do
     raise "NIF demuxer_read_packet/1 not implemented"
   end
 
-  def decoder_alloc_context(_stream) do
-    raise "NIF decoder_alloc_context/1 not implemented"
+  def decoder_alloc(_stream) do
+    raise "NIF decoder_alloc/1 not implemented"
   end
 
   def decoder_add_data(_ctx, _packet) do
