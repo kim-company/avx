@@ -222,6 +222,7 @@ ERL_NIF_TERM enif_demuxer_read_streams(ErlNifEnv *env, int argc,
   enif_get_demuxer(env, argv[0], &ctx);
   demuxer_fmt_ctx(ctx, &fmt_ctx);
 
+  codecs = calloc(fmt_ctx->nb_streams, sizeof(ERL_NIF_TERM));
   for (int i = 0; i < fmt_ctx->nb_streams; i++) {
     codecs[i] = enif_make_stream_map(env, fmt_ctx->streams[i]);
   }

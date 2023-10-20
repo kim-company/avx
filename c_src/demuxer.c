@@ -40,19 +40,6 @@ void demuxer_file_fmt_ctx(void *opaque, AVFormatContext **fmt_ctx) {
   *fmt_ctx = ctx->fmt_ctx;
 }
 
-int demuxer_file_read_streams(void *opaque, AVStream ***streams,
-                              unsigned int *size) {
-  DemuxerFile *ctx = (DemuxerFile *)opaque;
-
-  *size = (int)ctx->fmt_ctx->nb_streams;
-
-  *streams = calloc(*size, sizeof(AVStream *));
-  for (int i = 0; i < *size; i++)
-    streams[i] = &(ctx->fmt_ctx->streams[i]);
-
-  return 0;
-}
-
 int default_add(void *ctx, void *data, int size) { return -1; }
 int default_demand(void *ctx) { return -1; }
 int default_is_ready(void *ctx) { return 1; }
@@ -117,6 +104,11 @@ int read_ioq(void *opaque, uint8_t *buf, int buf_size) {
   }
 
   return size;
+}
+
+void demuxer_mem_fmt_ctx(void *opaque, AVFormatContext **fmt_ctx) {
+  DemuxerMem *ctx = (DemuxerMem *)opaque;
+  *fmt_ctx = ctx->fmt_ctx;
 }
 
 int demuxer_mem_read_header(DemuxerMem *ctx) {
@@ -263,7 +255,6 @@ int demuxer_alloc_from_file(Demuxer **demuxer, char *path) {
   idemuxer->opaque = ctx;
   idemuxer->read_packet = &demuxer_file_read_packet;
   idemuxer->add_data = &default_add;
-  idemuxer->read_streams = &demuxer_file_read_streams;
   idemuxer->fmt_ctx = &demuxer_file_fmt_ctx;
   idemuxer->is_ready = &default_is_ready;
   idemuxer->free = &demuxer_file_free;
@@ -285,7 +276,7 @@ int demuxer_alloc_in_mem(Demuxer **demuxer, int probe_size) {
   idemuxer->opaque = (void *)ctx;
   idemuxer->read_packet = &demuxer_mem_read_packet;
   idemuxer->add_data = &demuxer_mem_add_data;
-  // idemuxer->read_streams = &demuxer_mem_read_streams;
+  idemuxer->fmt_ctx = &demuxer_mem_fmt_ctx;
   idemuxer->is_ready = &demuxer_mem_is_ready;
   idemuxer->free = &demuxer_mem_free;
   idemuxer->demand = &demuxer_mem_demand;
@@ -300,11 +291,6 @@ int demuxer_read_packet(Demuxer *ctx, AVPacket *packet) {
 
 int demuxer_add_data(Demuxer *ctx, void *data, int size) {
   return ctx->add_data(ctx->opaque, data, size);
-}
-
-int demuxer_read_streams(Demuxer *ctx, AVStream ***streams,
-                         unsigned int *size) {
-  return ctx->read_streams(ctx->opaque, streams, size);
 }
 
 int demuxer_demand(Demuxer *ctx) { return ctx->demand(ctx->opaque); }
