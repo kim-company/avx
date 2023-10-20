@@ -1,4 +1,5 @@
 #include "libavcodec/codec_par.h"
+#include "libavformat/avformat.h"
 #include "libavutil/log.h"
 #include <decoder.h>
 #include <demuxer.h>
@@ -216,22 +217,18 @@ ERL_NIF_TERM enif_demuxer_read_streams(ErlNifEnv *env, int argc,
                                        const ERL_NIF_TERM argv[]) {
   ERL_NIF_TERM *codecs;
   Demuxer *ctx;
-  AVStream *streams;
-  unsigned int size;
-  int errn;
+  AVFormatContext *fmt_ctx;
 
   enif_get_demuxer(env, argv[0], &ctx);
+  demuxer_fmt_ctx(ctx, &fmt_ctx);
 
-  if ((errn = demuxer_read_streams(ctx, &streams, &size)) < 0)
-    return enif_make_av_error(env, errn);
-
-  codecs = calloc(size, sizeof(ERL_NIF_TERM));
-  for (int i = 0; i < size; i++) {
-    codecs[i] = enif_make_stream_map(env, &streams[i]);
+  for (int i = 0; i < fmt_ctx->nb_streams; i++) {
+    codecs[i] = enif_make_stream_map(env, fmt_ctx->streams[i]);
   }
 
-  return enif_make_tuple2(env, enif_make_atom(env, "ok"),
-                          enif_make_list_from_array(env, codecs, size));
+  return enif_make_tuple2(
+      env, enif_make_atom(env, "ok"),
+      enif_make_list_from_array(env, codecs, fmt_ctx->nb_streams));
 }
 
 int enif_get_packet(ErlNifEnv *env, ERL_NIF_TERM term, AVPacket **packet) {

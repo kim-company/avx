@@ -9,8 +9,9 @@ int demuxer_alloc_in_mem(Demuxer **demuxer, int probe_size);
 // indicate the amount of data should be supplied (i.e. demand)
 int demuxer_read_packet(Demuxer *ctx, AVPacket *packet);
 int demuxer_add_data(Demuxer *ctx, void *data, int size);
-int demuxer_read_streams(Demuxer *ctx, AVStream **streams, unsigned int *size);
+int demuxer_read_streams(Demuxer *ctx, AVStream ***streams, unsigned int *size);
 int demuxer_demand(Demuxer *ctx);
 int demuxer_is_ready(Demuxer *ctx);
 
+void demuxer_fmt_ctx(Demuxer *ctx, AVFormatContext **fmt_ctx);
 void demuxer_free(Demuxer **ctx);

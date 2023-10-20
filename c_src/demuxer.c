@@ -1,3 +1,4 @@
+#include "libavformat/avformat.h"
 #include <demuxer.h>
 #include <ioq.h>
 
@@ -34,12 +35,20 @@ int demuxer_file_read_packet(void *ctx, AVPacket *packet) {
   return av_read_frame(((DemuxerFile *)ctx)->fmt_ctx, packet);
 }
 
-int demuxer_file_read_streams(void *opaque, AVStream **streams,
+void demuxer_file_fmt_ctx(void *opaque, AVFormatContext **fmt_ctx) {
+  DemuxerFile *ctx = (DemuxerFile *)opaque;
+  *fmt_ctx = ctx->fmt_ctx;
+}
+
+int demuxer_file_read_streams(void *opaque, AVStream ***streams,
                               unsigned int *size) {
   DemuxerFile *ctx = (DemuxerFile *)opaque;
 
   *size = (int)ctx->fmt_ctx->nb_streams;
-  *streams = *ctx->fmt_ctx->streams;
+
+  *streams = calloc(*size, sizeof(AVStream *));
+  for (int i = 0; i < *size; i++)
+    streams[i] = &(ctx->fmt_ctx->streams[i]);
 
   return 0;
 }
@@ -235,9 +244,10 @@ struct Demuxer {
 
   int (*read_packet)(void *, AVPacket *);
   int (*add_data)(void *, void *, int);
-  int (*read_streams)(void *, AVStream **, unsigned int *);
+  int (*read_streams)(void *, AVStream ***, unsigned int *);
   int (*is_ready)(void *);
   int (*demand)(void *);
+  void (*fmt_ctx)(void *, AVFormatContext **);
   void (*free)(void **);
 };
 
@@ -254,6 +264,7 @@ int demuxer_alloc_from_file(Demuxer **demuxer, char *path) {
   idemuxer->read_packet = &demuxer_file_read_packet;
   idemuxer->add_data = &default_add;
   idemuxer->read_streams = &demuxer_file_read_streams;
+  idemuxer->fmt_ctx = &demuxer_file_fmt_ctx;
   idemuxer->is_ready = &default_is_ready;
   idemuxer->free = &demuxer_file_free;
   idemuxer->demand = &default_demand;
@@ -274,7 +285,7 @@ int demuxer_alloc_in_mem(Demuxer **demuxer, int probe_size) {
   idemuxer->opaque = (void *)ctx;
   idemuxer->read_packet = &demuxer_mem_read_packet;
   idemuxer->add_data = &demuxer_mem_add_data;
-  idemuxer->read_streams = &demuxer_mem_read_streams;
+  // idemuxer->read_streams = &demuxer_mem_read_streams;
   idemuxer->is_ready = &demuxer_mem_is_ready;
   idemuxer->free = &demuxer_mem_free;
   idemuxer->demand = &demuxer_mem_demand;
@@ -291,13 +302,18 @@ int demuxer_add_data(Demuxer *ctx, void *data, int size) {
   return ctx->add_data(ctx->opaque, data, size);
 }
 
-int demuxer_read_streams(Demuxer *ctx, AVStream **streams, unsigned int *size) {
+int demuxer_read_streams(Demuxer *ctx, AVStream ***streams,
+                         unsigned int *size) {
   return ctx->read_streams(ctx->opaque, streams, size);
 }
 
 int demuxer_demand(Demuxer *ctx) { return ctx->demand(ctx->opaque); }
 
 int demuxer_is_ready(Demuxer *ctx) { return ctx->is_ready(ctx->opaque); }
+
+void demuxer_fmt_ctx(Demuxer *ctx, AVFormatContext **fmt_ctx) {
+  ctx->fmt_ctx(ctx->opaque, fmt_ctx);
+}
 
 void demuxer_free(Demuxer **ctx) {
   (*ctx)->free(&(*ctx)->opaque);
