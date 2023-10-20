@@ -65,7 +65,6 @@ int decoder_send_packet(Decoder *ctx, AVPacket *packet) {
 
 int decoder_read_frame(Decoder *ctx, AVFrame *frame) {
   int errn;
-  // AVFrame *oframe;
 
   if ((errn = avcodec_receive_frame(ctx->codec_ctx, frame)) != 0)
     return errn;
