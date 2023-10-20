@@ -17,6 +17,7 @@ typedef struct {
   // accomodate more. The latter is used when probing the
   // input to find the header.
   QUEUE_MODE mode;
+  int input_eos;
 } Ioq;
 
 int queue_is_filled(Ioq *q);

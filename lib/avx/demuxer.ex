@@ -45,6 +45,17 @@ defmodule AVx.Demuxer do
     %__MODULE__{demuxer: NIF.demuxer_alloc(probe_size), reader: reader}
   end
 
+  def new_in_memory_from_file(path) do
+    new_in_memory(%{
+      opaque: File.open!(path, [:raw, :read]),
+      read: fn input, size ->
+        resp = IO.binread(input, size)
+        {resp, input}
+      end,
+      close: fn input -> File.close(input) end
+    })
+  end
+
   @spec new_from_file(Path.t()) :: t()
   def new_from_file(path) do
     %__MODULE__{demuxer: NIF.demuxer_alloc_from_file(path), file_path: path}

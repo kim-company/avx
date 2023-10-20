@@ -60,8 +60,7 @@ void demuxer_file_free(void **ctx) {
 typedef enum { CTX_MODE_DRAIN, CTX_MODE_BUF } CTX_MODE;
 
 typedef struct {
-  // Used to write binary data coming from membrane and as source for the
-  // AVFormatContext.
+  // Stores incoming bytes. Allows rewinding.
   Ioq *queue;
   // The context responsible for reading data from the queue. It is
   // configured to use the read_packet function as source.
@@ -80,6 +79,7 @@ int demuxer_mem_alloc(DemuxerMem **demuxer, int probe_size) {
   Ioq *queue = (Ioq *)malloc(sizeof(Ioq));
   queue->ptr = malloc(probe_size);
   queue->mode = QUEUE_MODE_GROW;
+  queue->input_eos = 0;
   queue->size = probe_size;
   queue->pos = 0;
   queue->buf_end = 0;
@@ -95,9 +95,18 @@ int demuxer_mem_alloc(DemuxerMem **demuxer, int probe_size) {
 
 int read_ioq(void *opaque, uint8_t *buf, int buf_size) {
   int size;
+  Ioq *queue;
 
-  if ((size = queue_read((Ioq *)opaque, buf, buf_size)) < 0)
-    return AVERROR_EOF;
+  queue = (Ioq *)opaque;
+
+  if ((size = queue_read(queue, buf, buf_size)) < 0) {
+    if (queue->input_eos)
+      return AVERROR_EOF;
+    // Avoid telling avio that the input is finished if
+    // we're the input is not.
+    return 0;
+  }
+
   return size;
 }
 
@@ -129,8 +138,9 @@ int demuxer_mem_read_header(DemuxerMem *ctx) {
   ctx->io_ctx = io_ctx;
   ctx->fmt_ctx = fmt_ctx;
 
-  // From now on, the queue will not grow but rather override data
-  // read by the io_ctx. Dequeue every information read by the
+  // From now on the queue will stop growing, it will rather
+  // delete data once it is read as we do not need to read
+  // it again from the beginning, we found the header!
   queue_deq(ctx->queue);
   ctx->queue->mode = QUEUE_MODE_SHIFT;
 
@@ -152,6 +162,7 @@ int demuxer_mem_add_data(void *ctx, void *data, int size) {
   // Indicates EOS.
   if (!data) {
     demuxer->mode = CTX_MODE_DRAIN;
+    demuxer->queue->input_eos = 1;
     return 0;
   }
 
@@ -196,6 +207,8 @@ int demuxer_mem_read_packet(void *opaque, AVPacket *packet) {
   freespace = queue_freespace(ctx->queue);
 
   if (freespace > 0 && ctx->mode == CTX_MODE_BUF)
+    // When we're not draining the demuxer, try to
+    // keep the ioq filled with data.
     return freespace;
 
   return av_read_frame(ctx->fmt_ctx, packet);
