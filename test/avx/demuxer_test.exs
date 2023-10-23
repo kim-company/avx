@@ -8,8 +8,7 @@ defmodule AVx.DemuxerTest do
 
   describe "demuxer" do
     test "from file" do
-      demuxer = Demuxer.new_from_file("/Users/dmorn/Downloads/multi-lang.mp4")
-      # demuxer = Demuxer.new_from_file(@input)
+      demuxer = Demuxer.new_from_file(@input)
 
       {streams, demuxer} = Demuxer.streams(demuxer)
 
