@@ -44,7 +44,7 @@ defmodule AVx.DemuxerTest do
         @input
         |> File.stream!([:raw, :read], 2048)
         |> Enum.map(fn data ->
-          send(pid, {:data, data})
+          MailboxReader.add_data(pid, data)
         end)
 
         send(pid, {:data, nil})

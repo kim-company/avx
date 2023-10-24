@@ -34,11 +34,13 @@ function.
 
 ## Usage
 Check the tests, but in practice this is the flow for decoding audio from a
-multi-track file from file to file in a lazy fashion. Note that callers can
-decide which type of reader implementation they want to provide.
+multi-track file from file to file in a lazy fashion.
 
 If initialized directly from a file, the demuxer
-supports all protocols supported by libav itself, such as RTMP, UDP, HLS, local files, ...
+supports all protocols supported by libav itself (such as RTMP, UDP, HLS, local files, ...).
+If a custom reader is provided, such the the MailboxReader, users should take
+care of fetching and sending the bytes to the demuxer by themselves (very useful when
+sending data from browser microphone through liveview and to the demuxer, for example).
 
 ```elixir
 demuxer = Demuxer.new_from_file(input_path)
@@ -46,17 +48,17 @@ demuxer = Demuxer.new_from_file(input_path)
 # Detect available stream and select one (or more)
 {streams, demuxer} = Demuxer.streams(demuxer)
 audio_stream = Enum.find(streams, fn stream -> stream.codec_type == :audio end)
+
+# Initialize the decoder. The sample rate, channel and audio format will match
+# the one of the input. At this time, the only resampling performed is from
+# planar audio to packed (so the data can be processed by Membrane for example, or
+# written directly into a file).
 decoder = Decoder.new!(audio_stream)
-
-packets =
-  demuxer
-  |> Demuxer.consume_packets([audio_stream.stream_index])
-  |> Stream.map(fn {_, packet} -> packet end)
-
 output = File.stream!(output_path, [:raw, :write])
 
-decoder
-|> Decoder.decode_raw(packets)
+demuxer
+|> Demuxer.consume_packets([audio_stream.stream_index])
+|> Decoder.decode_raw(decoder)
 |> Enum.into(output)
 ```
 
@@ -76,6 +78,22 @@ demuxer =
   })
 
 ```
+
+This one uses the MailboxReader: you can send messages with the data to
+it and will act as a source to the Demuxer.
+```elixir
+{:ok, pid} = AVx.Demuxer.MailboxReader.start_link()
+
+demuxer = AVx.Demuxer.new_in_memory(%{
+    opaque: pid,
+    read: &AVx.Demuxer.MailboxReader.read/2,
+    close: &AVx.Demuxer.MailboxReader.close/1
+  })
+
+# In another process
+:ok = AVx.Demuxer.MailboxReader.add_data(pid, <<>>)
+```
+
 And that's it. Compared to using the `ffmpeg` executable directly, here you have access
 to every single packet, which you can re-route, manipulate and process at will.
 

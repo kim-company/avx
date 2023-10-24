@@ -34,8 +34,8 @@ defmodule AVx.Decoder do
     |> Map.new()
   end
 
-  @spec decode_frames(t(), Enumerable.t()) :: Enumerable.t()
-  def decode_frames(state, packets) do
+  @spec decode_frames(Enumerable.t(), t()) :: Enumerable.t()
+  def decode_frames(packets, state) do
     packets
     |> Stream.flat_map(fn packet ->
       refs =
@@ -53,9 +53,9 @@ defmodule AVx.Decoder do
     end)
   end
 
-  def decode_raw(state, packets) do
-    state
-    |> decode_frames(packets)
+  def decode_raw(packets, state) do
+    packets
+    |> decode_frames(state)
     |> Stream.map(&Frame.unpack_audio(&1))
     |> Stream.map(fn x -> x.data end)
   end

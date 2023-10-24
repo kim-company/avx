@@ -34,8 +34,8 @@ defmodule AVx.DecoderTest do
 
   defp assert_frames(packets, decoder, expected_frames, ext) do
     count =
-      decoder
-      |> Decoder.decode_frames(packets)
+      packets
+      |> Decoder.decode_frames(decoder)
       |> Stream.map(&Frame.unpack_audio/1)
       |> Stream.zip(expected_frames)
       |> Enum.reduce(0, fn {have, want}, count ->

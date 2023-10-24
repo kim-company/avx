@@ -16,6 +16,12 @@ defmodule AVx.Demuxer.MailboxReader do
     end
   end
 
+  @doc "Add data to the reader"
+  @spec add_data(pid(), binary() | nil) :: :ok
+  def add_data(pid, data) do
+    send(pid, {:data, data})
+  end
+
   def close(_pid) do
     :ok
   end
