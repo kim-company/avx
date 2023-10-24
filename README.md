@@ -1,4 +1,8 @@
 # AVx
+[![Elixir CI](https://github.com/kim-company/avx/actions/workflows/elixir.yml/badge.svg)](https://github.com/kim-company/avx/actions/workflows/elixir.yml)
+
+
+
 Audio/Video Elixir. This is a libav (NIF) backed library for dealing with audio/video files. Takes
 a functional approach allowing users to decide which runtime they want to design.
 
