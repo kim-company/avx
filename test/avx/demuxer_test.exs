@@ -18,7 +18,6 @@ defmodule AVx.DemuxerTest do
       assert_packets(demuxer, [stream.stream_index], info)
     end
 
-    @tag skip: true
     test "with bin read from memory" do
       demuxer =
         Demuxer.new_in_memory(%{
@@ -38,7 +37,6 @@ defmodule AVx.DemuxerTest do
       assert_packets(demuxer, [stream.stream_index], info)
     end
 
-    @tag skip: true
     test "with MailboxReader" do
       pid = start_link_supervised!(MailboxReader)
 
@@ -71,8 +69,7 @@ defmodule AVx.DemuxerTest do
       count =
         demuxer
         |> Demuxer.consume_packets(indexes)
-        |> Stream.map(fn {_, packet} -> packet end)
-        |> Stream.filter(fn packet -> packet != nil end)
+        |> Stream.filter(fn packet -> packet.ref != nil end)
         |> Stream.map(&Packet.unpack(&1))
         |> Stream.zip(expected_packets)
         |> Enum.reduce(0, fn {have, want}, count ->

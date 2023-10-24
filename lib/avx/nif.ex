@@ -54,7 +54,7 @@ defmodule AVx.NIF do
     raise "NIF packet_unpack/1 not implemented"
   end
 
-  def frame_unpack(_frame) do
-    raise "NIF frame_unpack/1 not implemented"
+  def audio_frame_unpack(_frame) do
+    raise "NIF audio_frame_unpack/1 not implemented"
   end
 end

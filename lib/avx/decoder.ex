@@ -15,7 +15,8 @@ defmodule AVx.Decoder do
   @spec new!(AVx.Demuxer.stream()) :: t()
   def new!(stream) do
     %__MODULE__{
-      decoder: NIF.decoder_alloc(stream)
+      decoder: NIF.decoder_alloc(stream),
+      stream: stream
     }
   end
 
@@ -38,13 +39,13 @@ defmodule AVx.Decoder do
     packets
     |> Stream.flat_map(fn packet ->
       refs =
-        case packet do
+        case packet.ref do
           nil ->
             {:eof, refs} = NIF.decoder_add_data(state.decoder, nil)
             refs
 
-          packet ->
-            {:ok, refs} = NIF.decoder_add_data(state.decoder, packet.ref)
+          ref ->
+            {:ok, refs} = NIF.decoder_add_data(state.decoder, ref)
             refs
         end
 
@@ -55,7 +56,7 @@ defmodule AVx.Decoder do
   def decode_raw(state, packets) do
     state
     |> decode_frames(packets)
-    |> Stream.flat_map(&Frame.unpack(&1))
+    |> Stream.map(&Frame.unpack_audio(&1))
     |> Stream.map(fn x -> x.data end)
   end
 end

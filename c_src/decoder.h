@@ -9,7 +9,7 @@ struct Decoder {
 };
 
 int decoder_alloc(Decoder **ctx, enum AVCodecID codec_id,
-                  AVCodecParameters *params);
+                  AVCodecParameters *params, AVRational timebase);
 int decoder_send_packet(Decoder *ctx, AVPacket *packet);
 int decoder_read_frame(Decoder *ctx, AVFrame *frame);
 int decoder_free(Decoder **ctx);

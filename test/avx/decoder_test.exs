@@ -21,11 +21,7 @@ defmodule AVx.DecoderTest do
                %{codec_type: :audio} =
                Enum.find(streams, fn stream -> stream.codec_type == :audio end)
 
-      packets =
-        demuxer
-        |> Demuxer.consume_packets([stream.stream_index])
-        |> Stream.map(fn {_, packet} -> packet end)
-
+      packets = Demuxer.consume_packets(demuxer, [stream.stream_index])
       decoder = Decoder.new!(stream)
 
       assert %{channels: _, sample_rate: 48000, sample_format: "flt"} =
@@ -40,7 +36,7 @@ defmodule AVx.DecoderTest do
     count =
       decoder
       |> Decoder.decode_frames(packets)
-      |> Stream.flat_map(&Frame.unpack(&1))
+      |> Stream.map(&Frame.unpack_audio/1)
       |> Stream.zip(expected_frames)
       |> Enum.reduce(0, fn {have, want}, count ->
         # FIXME

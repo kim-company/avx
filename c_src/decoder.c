@@ -1,3 +1,5 @@
+#include "libavcodec/avcodec.h"
+#include "libswresample/swresample.h"
 #include <decoder.h>
 
 int is_planar(enum AVSampleFormat fmt) {
@@ -15,7 +17,6 @@ int is_planar(enum AVSampleFormat fmt) {
 }
 
 int alloc_resampler(Decoder *ctx) {
-  int ret;
   AVCodecContext *codec_ctx;
   enum AVSampleFormat output_fmt;
 
@@ -31,7 +32,7 @@ int alloc_resampler(Decoder *ctx) {
 }
 
 int decoder_alloc(Decoder **ctx, enum AVCodecID codec_id,
-                  AVCodecParameters *params) {
+                  AVCodecParameters *params, AVRational timebase) {
   const AVCodec *codec;
   AVCodecContext *codec_ctx;
   Decoder *ictx;
@@ -45,6 +46,8 @@ int decoder_alloc(Decoder **ctx, enum AVCodecID codec_id,
 
   if ((errn = avcodec_open2(codec_ctx, codec, NULL)) < 0)
     return errn;
+
+  codec_ctx->pkt_timebase = timebase;
 
   ictx = (Decoder *)malloc(sizeof(Decoder));
   ictx->codec_ctx = codec_ctx;
@@ -70,6 +73,8 @@ int decoder_read_frame(Decoder *ctx, AVFrame *frame) {
     return errn;
 
   if (ctx->resampler_ctx) {
+    int next_pts = swr_next_pts(ctx->resampler_ctx, frame->pts);
+
     AVFrame *resampled_frame;
     resampled_frame = av_frame_alloc();
     resampled_frame->nb_samples = frame->nb_samples;
@@ -83,7 +88,8 @@ int decoder_read_frame(Decoder *ctx, AVFrame *frame) {
     if ((errn = swr_convert_frame(ctx->resampler_ctx, resampled_frame,
                                   frame)) != 0)
       return errn;
-    resampled_frame->pts = frame->pts;
+
+    resampled_frame->pts = next_pts;
 
     av_frame_unref(frame);
     av_frame_ref(frame, resampled_frame);

@@ -22,7 +22,9 @@ defmodule AVx.Demuxer do
           codec_id: integer(),
           codec_name: binary(),
           stream_index: pos_integer(),
-          codec_params: reference()
+          codec_params: reference(),
+          timebase_num: pos_integer(),
+          timebase_den: pos_integer()
         }
 
   @type t :: %__MODULE__{
@@ -90,12 +92,16 @@ defmodule AVx.Demuxer do
   Returns an enumerable of AVx.Packet.
   """
   @spec consume_packets(t(), [pos_integer()]) :: Enumerable.t()
-  def consume_packets(state = %{reader: reader}, stream_indexes)
-      when reader != nil and is_list(stream_indexes) do
+  def consume_packets(state, stream_indexes) when is_list(stream_indexes) do
     # -1 is used as an indicator for the last packet, which must
     # be delivered to the decoder to put it into drain mode.
     accepted_streams = stream_indexes ++ [-1]
 
+    do_consume_packets(state, accepted_streams)
+  end
+
+  defp do_consume_packets(state = %{reader: reader}, stream_indexes)
+       when reader != nil and is_list(stream_indexes) do
     # TODO error handling?
     Stream.resource(
       fn -> state end,
@@ -107,10 +113,10 @@ defmodule AVx.Demuxer do
           case NIF.demuxer_read_packet(state.demuxer) do
             {:error, reason} ->
               Logger.error("Demuxer read packet failed: #{inspect(to_string(reason))}")
-              {[nil], %{state | eof: %{state.eof | demuxer: true}}}
+              {[AVx.Packet.new(nil)], %{state | eof: %{state.eof | demuxer: true}}}
 
             :eof ->
-              {[nil], %{state | eof: %{state.eof | demuxer: true}}}
+              {[AVx.Packet.new(nil)], %{state | eof: %{state.eof | demuxer: true}}}
 
             {:demand, demand} ->
               {[], read_input(state, demand)}
@@ -123,14 +129,10 @@ defmodule AVx.Demuxer do
         state -> state.reader.close.(state.reader.opaque)
       end
     )
-    |> filter_packets(accepted_streams)
+    |> filter_packets(stream_indexes)
   end
 
-  def consume_packets(state, stream_indexes) when is_list(stream_indexes) do
-    # -1 is used as an indicator for the last packet, which must
-    # be delivered to the decoder to put it into drain mode.
-    accepted_streams = stream_indexes ++ [-1]
-
+  defp do_consume_packets(state, stream_indexes) do
     Stream.resource(
       fn -> state end,
       fn
@@ -143,10 +145,10 @@ defmodule AVx.Demuxer do
           case NIF.demuxer_read_packet(state.demuxer) do
             {:error, reason} ->
               Logger.error("Demuxer read packet failed: #{inspect(to_string(reason))}")
-              {[nil], %{state | eof: %{state.eof | demuxer: true}}}
+              {[AVx.Packet.new(nil)], %{state | eof: %{state.eof | demuxer: true}}}
 
             :eof ->
-              {[nil], %{state | eof: %{state.eof | demuxer: true}}}
+              {[AVx.Packet.new(nil)], %{state | eof: %{state.eof | demuxer: true}}}
 
             {:ok, ref} ->
               {[AVx.Packet.new(ref)], state}
@@ -154,20 +156,18 @@ defmodule AVx.Demuxer do
       end,
       fn _state -> :ok end
     )
-    |> filter_packets(accepted_streams)
+    |> filter_packets(stream_indexes)
   end
 
   defp filter_packets(packets, accepted_streams) do
     packets
-    |> Stream.map(fn packet -> {Packet.stream_index(packet), packet} end)
-    |> Stream.filter(fn {stream_index, _packet} -> stream_index in accepted_streams end)
+    |> Stream.filter(fn packet -> packet.stream_index in accepted_streams end)
   end
 
   def consume_raw(state, stream_indexes) do
     state
     |> consume_packets(stream_indexes)
-    |> Stream.map(fn {_, packet} -> packet end)
-    |> Stream.filter(fn packet -> packet != nil end)
+    |> Stream.filter(fn packet -> packet.ref != nil end)
     |> Stream.map(&Packet.unpack/1)
     |> Stream.map(fn packet -> packet.data end)
   end

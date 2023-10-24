@@ -1,6 +1,7 @@
 #include "libavcodec/codec_par.h"
 #include "libavformat/avformat.h"
 #include "libavutil/log.h"
+#include "libavutil/samplefmt.h"
 #include <decoder.h>
 #include <demuxer.h>
 #include <erl_nif.h>
@@ -286,6 +287,7 @@ ERL_NIF_TERM enif_decoder_alloc(ErlNifEnv *env, int argc,
   int codec_id;
   AVCodecParameters *params;
   Decoder *ctx;
+  AVRational timebase;
   int errn;
 
   // Intermediate decoding data.
@@ -294,10 +296,17 @@ ERL_NIF_TERM enif_decoder_alloc(ErlNifEnv *env, int argc,
   enif_get_map_value(env, argv[0], enif_make_atom(env, "codec_id"), &tmp);
   enif_get_int(env, tmp, &codec_id);
 
+  enif_get_map_value(env, argv[0], enif_make_atom(env, "timebase_num"), &tmp);
+  enif_get_int(env, tmp, &timebase.num);
+
+  enif_get_map_value(env, argv[0], enif_make_atom(env, "timebase_den"), &tmp);
+  enif_get_int(env, tmp, &timebase.den);
+
   enif_get_map_value(env, argv[0], enif_make_atom(env, "codec_params"), &tmp);
   enif_get_codec_params(env, tmp, &params);
 
-  if ((errn = decoder_alloc(&ctx, (enum AVCodecID)codec_id, params)) < 0)
+  if ((errn = decoder_alloc(&ctx, (enum AVCodecID)codec_id, params, timebase)) <
+      0)
     return enif_make_av_error(env, errn);
 
   // Make the resource take ownership on the context.
@@ -420,40 +429,32 @@ int enif_get_frame(ErlNifEnv *env, ERL_NIF_TERM term, AVFrame **frame) {
   return ret;
 }
 
-ERL_NIF_TERM enif_frame_unpack(ErlNifEnv *env, int argc,
-                               const ERL_NIF_TERM argv[]) {
+ERL_NIF_TERM enif_audio_frame_unpack(ErlNifEnv *env, int argc,
+                                     const ERL_NIF_TERM argv[]) {
   AVFrame *frame;
-  ERL_NIF_TERM list;
+  ERL_NIF_TERM data;
+  ERL_NIF_TERM map;
 
   enif_get_frame(env, argv[0], &frame);
 
-  list = enif_make_list(env, 0);
-  AVBufferRef *ref;
-  for (int i = 0; i < AV_NUM_DATA_POINTERS; i++) {
-    if (!(ref = frame->buf[i]))
-      break;
+  // This is only going to work with packed data,
+  // but this is what our decoder is providing.
 
-    ERL_NIF_TERM data;
-    ERL_NIF_TERM map;
+  // TODO
+  // move this code iside the demuxer.
 
-    void *ptr = enif_make_new_binary(env, ref->size, &data);
-    memcpy(ptr, ref->data, ref->size);
+  size_t size = av_samples_get_buffer_size(NULL, frame->ch_layout.nb_channels,
+                                           frame->nb_samples, frame->format, 1);
 
-    // Create a frame map with the data contained in each
-    // buffer reference.
-    map = enif_make_new_map(env);
-    // TODO
-    // each frame map created here will have the same pts value.
-    // To solve, we might divide frame->duration with the number of
-    // buffers found duration this process.
-    enif_make_map_put(env, map, enif_make_atom(env, "pts"),
-                      enif_make_long(env, frame->pts), &map);
-    enif_make_map_put(env, map, enif_make_atom(env, "data"), data, &map);
+  void *ptr = enif_make_new_binary(env, size, &data);
+  memcpy(ptr, frame->extended_data[0], size);
 
-    list = enif_make_list_cell(env, map, list);
-  }
+  map = enif_make_new_map(env);
+  enif_make_map_put(env, map, enif_make_atom(env, "pts"),
+                    enif_make_long(env, frame->pts), &map);
+  enif_make_map_put(env, map, enif_make_atom(env, "data"), data, &map);
 
-  return enif_make_tuple2(env, enif_make_atom(env, "ok"), list);
+  return enif_make_tuple2(env, enif_make_atom(env, "ok"), map);
 }
 
 void enif_free_packet(ErlNifEnv *env, void *res) {
@@ -508,8 +509,10 @@ static ErlNifFunc nif_funcs[] = {
     {"decoder_add_data", 2, enif_decoder_add_data},
     // General
     {"packet_stream_index", 1, enif_packet_stream_index},
+    // TODO
+    // Maybe unpack_* would be better function naming.
     {"packet_unpack", 1, enif_packet_unpack},
-    {"frame_unpack", 1, enif_frame_unpack},
+    {"audio_frame_unpack", 1, enif_audio_frame_unpack},
 };
 
 ERL_NIF_INIT(Elixir.AVx.NIF, nif_funcs, load, NULL, NULL, NULL)

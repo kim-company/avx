@@ -8,9 +8,9 @@ defmodule AVx.Frame do
     %__MODULE__{ref: ref}
   end
 
-  @spec unpack(t()) :: [unpacked()]
-  def unpack(frame) do
-    {:ok, buffers} = AVx.NIF.frame_unpack(frame.ref)
+  @spec unpack_audio(t()) :: [unpacked()]
+  def unpack_audio(frame) do
+    {:ok, buffers} = AVx.NIF.audio_frame_unpack(frame.ref)
     buffers
   end
 end
