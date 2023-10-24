@@ -22,6 +22,7 @@ Also, you need ffmpeg's libraries on your machine. `pkg-config` is used to find 
 ## Features
 - [x] demux any audio/video container (mp4, ogg, mkv, ...)
 - [x] decode audio files
+- [ ] mux streams
 - [ ] decode video files (in theory we should already be there, in practise the stream format for videos is not implemented and neither is the Frame "unpacking")
 
 In the future it will support also encoding and muxing, in this order.
