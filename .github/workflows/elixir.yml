@@ -24,7 +24,7 @@ jobs:
     - name: Install necessary libraries
       run: |
         sudo apt-get update
-        sudo apt-get install -y pkg-config libavutil-dev libavcodec-dev libavformat-dev libavutil-dev libswresample-dev
+        sudo apt-get install -y pkg-config build-essential erlang-dev libavutil-dev libavcodec-dev libavformat-dev libavutil-dev libswresample-dev
 
     - uses: actions/checkout@v3
     - name: Set up Elixir
