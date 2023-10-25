@@ -203,6 +203,9 @@ ERL_NIF_TERM enif_make_stream_map(ErlNifEnv *env, AVStream *stream) {
                     &map);
   enif_make_map_put(env, map, enif_make_atom(env, "stream_index"),
                     enif_make_int(env, stream->index), &map);
+  // TODO
+  // Create a resource of the AVRational struct instead
+  // of splitting it into two integers.
   enif_make_map_put(env, map, enif_make_atom(env, "timebase_num"),
                     enif_make_int(env, stream->time_base.num), &map);
   enif_make_map_put(env, map, enif_make_atom(env, "timebase_den"),
