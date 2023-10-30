@@ -10,10 +10,6 @@ defmodule AVx.NIF do
     raise "NIF demuxer_alloc_from_file/1 not implemented"
   end
 
-  def demuxer_read_header(_ctx) do
-    raise "NIF demuxer_read_header/1 not implemented"
-  end
-
   def demuxer_streams(_ctx) do
     raise "NIF demuxer_streams/1 not implemented"
   end

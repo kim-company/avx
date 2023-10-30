@@ -18,3 +18,14 @@ defmodule Support do
     |> Enum.filter(fn %{"type" => type} -> type == "frame" end)
   end
 end
+
+defmodule Support.TiHandler do
+  use ThousandIsland.Handler
+
+  @impl ThousandIsland.Handler
+  def handle_connection(socket, state) do
+    data = File.read!(state.path)
+    ThousandIsland.Socket.send(socket, data)
+    {:close, state}
+  end
+end

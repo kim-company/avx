@@ -7,7 +7,25 @@ defmodule AVx.DemuxerTest do
 
   describe "demuxer" do
     test "from file" do
-      {:ok, demuxer} = Demuxer.new_from_file(@input)
+      assert_demuxer(@input)
+    end
+
+    test "from tcp socket" do
+      pid =
+        start_link_supervised!(
+          {ThousandIsland,
+           [port: 0, handler_module: Support.TiHandler, handler_options: %{path: @input}]}
+        )
+
+      {:ok, {_, port}} = ThousandIsland.listener_info(pid)
+      addr = "tcp://127.0.0.1:#{port}"
+
+      assert_demuxer(addr)
+      ThousandIsland.stop(pid)
+    end
+
+    defp assert_demuxer(input_path) do
+      {:ok, demuxer} = Demuxer.new_from_file(input_path)
       streams = Demuxer.read_streams(demuxer)
 
       stream = Enum.find(streams, fn stream -> stream.codec_type == :audio end)

@@ -1,7 +1,3 @@
-#include "libavcodec/codec_par.h"
-#include "libavformat/avformat.h"
-#include "libavutil/log.h"
-#include "libavutil/samplefmt.h"
 #include <decoder.h>
 #include <demuxer.h>
 #include <erl_nif.h>
@@ -450,17 +446,18 @@ static ErlNifFunc nif_funcs[] = {
 
     // {erl_function_name, erl_function_arity, c_function}
     // Demuxer
-    {"demuxer_alloc_from_file", 1, enif_demuxer_alloc_from_file},
+    {"demuxer_alloc_from_file", 1, enif_demuxer_alloc_from_file,
+     ERL_NIF_DIRTY_JOB_IO_BOUND},
     {"demuxer_streams", 1, enif_demuxer_streams},
     {"demuxer_read_packet", 1, enif_demuxer_read_packet},
-    // Decoder
+    // // Decoder
     {"decoder_alloc", 1, enif_decoder_alloc},
     {"decoder_stream_format", 1, enif_decoder_stream_format},
     {"decoder_add_data", 2, enif_decoder_add_data},
-    // General
+    // // General
     {"packet_stream_index", 1, enif_packet_stream_index},
-    // TODO
-    // Maybe unpack_* would be better function naming.
+    // // TODO
+    // // Maybe unpack_* would be better function naming.
     {"packet_unpack", 1, enif_packet_unpack},
     {"audio_frame_unpack", 1, enif_audio_frame_unpack},
 };
