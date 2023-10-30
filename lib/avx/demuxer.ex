@@ -2,19 +2,6 @@ defmodule AVx.Demuxer do
   alias AVx.{NIF, Packet}
   require Logger
 
-  @default_probe_size 2048
-
-  @type read :: (any(), size :: pos_integer -> {:eof | iodata(), any()})
-  @type close :: (any() -> :ok)
-  @type input :: any()
-
-  @type reader :: %{
-          read: read(),
-          close: close(),
-          opaque: any(),
-          probe_size: non_neg_integer()
-        }
-
   @type codec_type :: :audio | :video
 
   @type stream :: %{
@@ -29,60 +16,39 @@ defmodule AVx.Demuxer do
 
   @type t :: %__MODULE__{
           demuxer: reference(),
-          reader: reader() | nil,
-          file_path: Path.t() | nil,
+          uri: URI.t(),
           eof: map()
         }
-  defstruct [:demuxer, :reader, :file_path, eof: %{input: false, demuxer: false}]
+  defstruct [:demuxer, :uri, eof: %{input: false, demuxer: false}]
 
-  @spec new_in_memory(reader()) :: t()
-  @doc """
-  Allocates a demuxer that reads that from the provided reader instead
-  of a file. For a reader implementation, check the MailboxReader.
-
-  WARNING: this is an experimental feature
-  """
-  def new_in_memory(reader) do
-    probe_size = Map.get(reader, :probe_size, @default_probe_size)
-    %__MODULE__{demuxer: NIF.demuxer_alloc(probe_size), reader: reader}
-  end
-
-  def new_in_memory_from_file(path) do
-    new_in_memory(%{
-      opaque: File.open!(path, [:raw, :read]),
-      read: fn input, size ->
-        resp = IO.binread(input, size)
-        {resp, input}
-      end,
-      close: fn input -> File.close(input) end
-    })
-  end
-
-  @spec new_from_file(Path.t()) :: t()
-  def new_from_file(path) do
-    %__MODULE__{demuxer: NIF.demuxer_alloc_from_file(path), file_path: path}
-  end
-
-  @doc """
-  Consumes the input until the header is parsed. Then, the available streams are returned.
-  """
-  @spec streams(t()) :: {[stream()], t()}
-  def streams(state = %{reader: reader}) when reader != nil do
-    if is_ready(state) or state.eof.input do
-      read_streams(state)
-    else
-      state
-      |> read_input()
-      |> streams()
+  @spec new_from_file(String.t()) :: {:ok, t()} | {:error, any()}
+  def new_from_file(uri) do
+    case NIF.demuxer_alloc_from_file(uri) do
+      {:ok, demuxer} -> {:ok, %__MODULE__{demuxer: demuxer, uri: uri}}
+      {:error, reason} -> {:error, to_string(reason)}
     end
   end
 
-  def streams(state) do
-    read_streams(state)
-  end
-
-  defp is_ready(state) do
-    NIF.demuxer_is_ready(state.demuxer) != 0
+  @doc """
+  Opens and starts reading the input file finding the streams
+  contained in it.
+  """
+  @spec read_streams(t()) :: [stream()]
+  def read_streams(state) do
+    state.demuxer
+    |> NIF.demuxer_streams()
+    |> Enum.map(fn stream ->
+      # Coming from erlang, strings are charlists.
+      stream
+      |> Enum.map(fn {key, value} ->
+        if is_list(value) do
+          {key, to_string(value)}
+        else
+          {key, value}
+        end
+      end)
+      |> Map.new()
+    end)
   end
 
   @doc """
@@ -91,45 +57,13 @@ defmodule AVx.Demuxer do
 
   Returns an enumerable of AVx.Packet.
   """
-  @spec consume_packets(t(), [pos_integer()]) :: Enumerable.t()
+  @spec consume_packets(t(), [pos_integer()]) :: Stream.t()
   def consume_packets(state, stream_indexes) when is_list(stream_indexes) do
     # -1 is used as an indicator for the last packet, which must
     # be delivered to the decoder to put it into drain mode.
     accepted_streams = stream_indexes ++ [-1]
 
     do_consume_packets(state, accepted_streams)
-  end
-
-  defp do_consume_packets(state = %{reader: reader}, stream_indexes)
-       when reader != nil and is_list(stream_indexes) do
-    # TODO error handling?
-    Stream.resource(
-      fn -> state end,
-      fn
-        state = %__MODULE__{eof: %{demuxer: true}} ->
-          {:halt, state}
-
-        state ->
-          case NIF.demuxer_read_packet(state.demuxer) do
-            {:error, reason} ->
-              Logger.error("Demuxer read packet failed: #{inspect(to_string(reason))}")
-              {[AVx.Packet.new(nil)], %{state | eof: %{state.eof | demuxer: true}}}
-
-            :eof ->
-              {[AVx.Packet.new(nil)], %{state | eof: %{state.eof | demuxer: true}}}
-
-            {:demand, demand} ->
-              {[], read_input(state, demand)}
-
-            {:ok, ref} ->
-              {[AVx.Packet.new(ref)], state}
-          end
-      end,
-      fn
-        state -> state.reader.close.(state.reader.opaque)
-      end
-    )
-    |> filter_packets(stream_indexes)
   end
 
   defp do_consume_packets(state, stream_indexes) do
@@ -140,8 +74,6 @@ defmodule AVx.Demuxer do
           {:halt, state}
 
         state ->
-          # There is no demand when the demuxer is taking care of
-          # the input internally.
           case NIF.demuxer_read_packet(state.demuxer) do
             {:error, reason} ->
               Logger.error("Demuxer read packet failed: #{inspect(to_string(reason))}")
@@ -170,41 +102,5 @@ defmodule AVx.Demuxer do
     |> Stream.filter(fn packet -> packet.ref != nil end)
     |> Stream.map(&Packet.unpack/1)
     |> Stream.map(fn packet -> packet.data end)
-  end
-
-  defp read_input(state, demand \\ nil) do
-    demand = if demand != nil, do: demand, else: NIF.demuxer_demand(state.demuxer)
-
-    case state.reader.read.(state.reader.opaque, demand) do
-      {:eof, opaque} ->
-        NIF.demuxer_add_data(state.demuxer, nil)
-        %{state | reader: %{state.reader | opaque: opaque}, eof: %{state.eof | input: true}}
-
-      {data, opaque} ->
-        NIF.demuxer_add_data(state.demuxer, data)
-        %{state | reader: %{state.reader | opaque: opaque}}
-    end
-  end
-
-  defp read_streams(state) do
-    streams =
-      state.demuxer
-      |> NIF.demuxer_streams()
-      # TODO error handling?
-      |> elem(1)
-      |> Enum.map(fn stream ->
-        # Coming from erlang, strings are charlists.
-        stream
-        |> Enum.map(fn {key, value} ->
-          if is_list(value) do
-            {key, to_string(value)}
-          else
-            {key, value}
-          end
-        end)
-        |> Map.new()
-      end)
-
-    {streams, state}
   end
 end

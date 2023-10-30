@@ -14,8 +14,8 @@ defmodule AVx.DecoderTest do
 
   for input <- @inputs do
     test "extract audio track from #{input}" do
-      demuxer = Demuxer.new_from_file(unquote(input))
-      {streams, demuxer} = Demuxer.streams(demuxer)
+      {:ok, demuxer} = Demuxer.new_from_file(unquote(input))
+      streams = Demuxer.read_streams(demuxer)
 
       assert stream =
                %{codec_type: :audio} =

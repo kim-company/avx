@@ -26,7 +26,8 @@ defmodule AVx.MixProject do
     [
       {:nimble_options, "~> 1.0.0"},
       {:elixir_make, "~> 0.6", runtime: false},
-      {:jason, "~> 1.4.1"}
+      {:jason, "~> 1.4.1"},
+      {:thousand_island, "~> 1.1", only: :test}
     ]
   end
 

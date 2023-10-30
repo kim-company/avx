@@ -1,12 +1,11 @@
 #include "libswresample/swresample.h"
 #include <libavcodec/avcodec.h>
 
-typedef struct Decoder Decoder;
-struct Decoder {
+typedef struct {
   AVCodecContext *codec_ctx;
   SwrContext *resampler_ctx;
   enum AVSampleFormat output_sample_format;
-};
+} Decoder;
 
 int decoder_alloc(Decoder **ctx, enum AVCodecID codec_id,
                   AVCodecParameters *params, AVRational timebase);

@@ -78,45 +78,9 @@ ERL_NIF_TERM enif_demuxer_alloc_from_file(ErlNifEnv *env, int argc,
 
   if (errn < 0)
     return enif_make_av_error(env, errn);
-  return enif_make_demuxer_res(env, ctx);
-}
 
-ERL_NIF_TERM enif_demuxer_alloc_in_mem(ErlNifEnv *env, int argc,
-                                       const ERL_NIF_TERM argv[]) {
-  int probe_size, errn;
-  Demuxer *ctx;
-
-  enif_get_int(env, argv[0], &probe_size);
-  if (probe_size <= 0)
-    probe_size = DEFAULT_PROBE_SIZE;
-
-  if ((errn = demuxer_alloc_in_mem(&ctx, probe_size)) < 0)
-    return enif_make_av_error(env, errn);
-
-  return enif_make_demuxer_res(env, ctx);
-}
-
-ERL_NIF_TERM enif_demuxer_add_data(ErlNifEnv *env, int argc,
-                                   const ERL_NIF_TERM argv[]) {
-  Demuxer *ctx;
-  ErlNifBinary binary;
-  int errn;
-
-  enif_get_demuxer(env, argv[0], &ctx);
-  enif_inspect_binary(env, argv[1], &binary);
-
-  if ((errn = demuxer_add_data(ctx, binary.data, binary.size)) < 0)
-    return enif_make_error(env, "add data not allowed");
-
-  return enif_make_atom(env, "ok");
-}
-
-ERL_NIF_TERM enif_demuxer_is_ready(ErlNifEnv *env, int argc,
-                                   const ERL_NIF_TERM argv[]) {
-  Demuxer *ctx;
-  enif_get_demuxer(env, argv[0], &ctx);
-
-  return enif_make_int(env, demuxer_is_ready(ctx));
+  return enif_make_tuple2(env, enif_make_atom(env, "ok"),
+                          enif_make_demuxer_res(env, ctx));
 }
 
 ERL_NIF_TERM enif_demuxer_read_packet(ErlNifEnv *env, int argc,
@@ -132,11 +96,8 @@ ERL_NIF_TERM enif_demuxer_read_packet(ErlNifEnv *env, int argc,
   if ((ret = demuxer_read_packet(ctx, packet)) != 0) {
     if (ret == AVERROR_EOF)
       return enif_make_atom(env, "eof");
-    if (ret < 0)
+    else
       return enif_make_av_error(env, ret);
-    if (ret > 0)
-      return enif_make_tuple2(env, enif_make_atom(env, "demand"),
-                              enif_make_long(env, ret));
   }
 
   // Make the resource
@@ -217,23 +178,21 @@ ERL_NIF_TERM enif_make_stream_map(ErlNifEnv *env, AVStream *stream) {
   return map;
 }
 
-ERL_NIF_TERM enif_demuxer_read_streams(ErlNifEnv *env, int argc,
-                                       const ERL_NIF_TERM argv[]) {
+ERL_NIF_TERM enif_demuxer_streams(ErlNifEnv *env, int argc,
+                                  const ERL_NIF_TERM argv[]) {
   ERL_NIF_TERM *codecs;
   Demuxer *ctx;
   AVFormatContext *fmt_ctx;
 
   enif_get_demuxer(env, argv[0], &ctx);
-  demuxer_fmt_ctx(ctx, &fmt_ctx);
+  fmt_ctx = ctx->fmt_ctx;
 
   codecs = calloc(fmt_ctx->nb_streams, sizeof(ERL_NIF_TERM));
   for (int i = 0; i < fmt_ctx->nb_streams; i++) {
     codecs[i] = enif_make_stream_map(env, fmt_ctx->streams[i]);
   }
 
-  return enif_make_tuple2(
-      env, enif_make_atom(env, "ok"),
-      enif_make_list_from_array(env, codecs, fmt_ctx->nb_streams));
+  return enif_make_list_from_array(env, codecs, fmt_ctx->nb_streams);
 }
 
 int enif_get_packet(ErlNifEnv *env, ERL_NIF_TERM term, AVPacket **packet) {
@@ -264,14 +223,6 @@ ERL_NIF_TERM enif_packet_unpack(ErlNifEnv *env, int argc,
   enif_make_map_put(env, map, enif_make_atom(env, "data"), data, &map);
 
   return map;
-}
-
-ERL_NIF_TERM enif_demuxer_demand(ErlNifEnv *env, int argc,
-                                 const ERL_NIF_TERM argv[]) {
-  Demuxer *ctx;
-  enif_get_demuxer(env, argv[0], &ctx);
-
-  return enif_make_int(env, demuxer_demand(ctx));
 }
 
 void enif_free_decoder(ErlNifEnv *env, void *res) {
@@ -500,12 +451,8 @@ static ErlNifFunc nif_funcs[] = {
     // {erl_function_name, erl_function_arity, c_function}
     // Demuxer
     {"demuxer_alloc_from_file", 1, enif_demuxer_alloc_from_file},
-    {"demuxer_alloc", 1, enif_demuxer_alloc_in_mem},
-    {"demuxer_streams", 1, enif_demuxer_read_streams},
+    {"demuxer_streams", 1, enif_demuxer_streams},
     {"demuxer_read_packet", 1, enif_demuxer_read_packet},
-    {"demuxer_add_data", 2, enif_demuxer_add_data},
-    {"demuxer_is_ready", 1, enif_demuxer_is_ready},
-    {"demuxer_demand", 1, enif_demuxer_demand},
     // Decoder
     {"decoder_alloc", 1, enif_decoder_alloc},
     {"decoder_stream_format", 1, enif_decoder_stream_format},
