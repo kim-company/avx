@@ -5,10 +5,13 @@ defmodule AVx.Demuxer do
   @type codec_type :: :audio | :video
 
   @type stream :: %{
+          stream_index: pos_integer(),
           codec_type: codec_type(),
           codec_id: integer(),
           codec_name: binary(),
-          stream_index: pos_integer(),
+          channels: pos_integer(),
+          sample_rate: pos_integer(),
+          sample_format: binary(),
           codec_params: reference(),
           timebase_num: pos_integer(),
           timebase_den: pos_integer()
@@ -50,6 +53,10 @@ defmodule AVx.Demuxer do
       |> Map.new()
     end)
   end
+
+  def stream_type(%{codec_type: 1}), do: :audio
+  def stream_type(%{codec_type: 0}), do: :video
+  def stream_type(_other), do: :unknown
 
   @doc """
   Returns the packets of the selected `stream_indexes`. After using this function,

@@ -1,3 +1,4 @@
+#include "libavutil/samplefmt.h"
 #include <decoder.h>
 #include <demuxer.h>
 #include <erl_nif.h>
@@ -110,10 +111,10 @@ ERL_NIF_TERM enif_demuxer_read_packet(ErlNifEnv *env, int argc,
 }
 
 ERL_NIF_TERM enif_make_stream_map(ErlNifEnv *env, AVStream *stream) {
-  ERL_NIF_TERM codec_term;
   ErlNifBinary *binary;
   AVCodecParameters *params = NULL;
   const char *codec_name;
+  const char *sample_fmt;
 
   // Parameters are used to preserve as much information
   // as possible when creating a new Codec.
@@ -125,52 +126,42 @@ ERL_NIF_TERM enif_make_stream_map(ErlNifEnv *env, AVStream *stream) {
       enif_alloc_resource(CODEC_PARAMS_RES_TYPE, sizeof(AVCodecParameters *));
   *codec_params_res = params;
 
-  ERL_NIF_TERM res_term = enif_make_resource(env, codec_params_res);
-
-  // This is done to allow the erlang garbage collector to take care
-  // of freeing this resource when needed.
-  enif_release_resource(codec_params_res);
-
-  // Create the returned map of information.
   codec_name = avcodec_get_name(params->codec_id);
+  sample_fmt = av_get_sample_fmt_name(params->format);
 
   ERL_NIF_TERM map;
   map = enif_make_new_map(env);
 
-  ERL_NIF_TERM codec_type;
-  switch (params->codec_type) {
-  case AVMEDIA_TYPE_AUDIO:
-    codec_type = enif_make_atom(env, "audio");
-    break;
-  case AVMEDIA_TYPE_VIDEO:
-    codec_type = enif_make_atom(env, "video");
-    break;
-  default:
-    codec_type = enif_make_atom(env, "und");
-    break;
-  }
-
-  enif_make_map_put(env, map, enif_make_atom(env, "codec_id"),
-                    enif_make_int(env, params->codec_id), &map);
-  enif_make_map_put(env, map, enif_make_atom(env, "codec_type"), codec_type,
-                    &map);
-  enif_make_map_put(env, map, enif_make_atom(env, "codec_name"),
-                    enif_make_string(env, codec_name, ERL_NIF_UTF8), &map);
-  enif_make_map_put(env, map, enif_make_atom(env, "codec_params"), res_term,
-                    &map);
   enif_make_map_put(env, map, enif_make_atom(env, "stream_index"),
                     enif_make_int(env, stream->index), &map);
-  // TODO
-  // Create a resource of the AVRational struct instead
-  // of splitting it into two integers.
   enif_make_map_put(env, map, enif_make_atom(env, "timebase_num"),
                     enif_make_int(env, stream->time_base.num), &map);
   enif_make_map_put(env, map, enif_make_atom(env, "timebase_den"),
                     enif_make_int(env, stream->time_base.den), &map);
 
+  enif_make_map_put(env, map, enif_make_atom(env, "codec_id"),
+                    enif_make_int(env, params->codec_id), &map);
+  enif_make_map_put(env, map, enif_make_atom(env, "codec_type"),
+                    enif_make_int(env, params->codec_type), &map);
+  enif_make_map_put(env, map, enif_make_atom(env, "codec_name"),
+                    enif_make_string(env, codec_name, ERL_NIF_UTF8), &map);
+  enif_make_map_put(env, map, enif_make_atom(env, "codec_params"),
+                    enif_make_resource(env, codec_params_res), &map);
+
+  enif_make_map_put(env, map, enif_make_atom(env, "channels"),
+                    enif_make_int(env, stream->codecpar->ch_layout.nb_channels),
+                    &map);
+  enif_make_map_put(env, map, enif_make_atom(env, "sample_rate"),
+                    enif_make_int(env, params->sample_rate), &map);
+  enif_make_map_put(env, map, enif_make_atom(env, "sample_format"),
+                    enif_make_string(env, sample_fmt, ERL_NIF_UTF8), &map);
+
+  // This is done to allow the erlang garbage collector to take care
+  // of freeing this resource when needed.
+  enif_release_resource(codec_params_res);
+
   // TODO
-  // Expand the information available to Elixir: here we can only select a
-  // stream by index and codec, quality or language should be available too.
+  // Video information is missing.
   return map;
 }
 
@@ -234,30 +225,48 @@ void enif_get_decoder(ErlNifEnv *env, ERL_NIF_TERM term, Decoder **ctx) {
 
 ERL_NIF_TERM enif_decoder_alloc(ErlNifEnv *env, int argc,
                                 const ERL_NIF_TERM argv[]) {
-  int codec_id;
-  AVCodecParameters *params;
+
   Decoder *ctx;
-  AVRational timebase;
+  DecoderOpts *opts;
+  int buf_size = 256;
+  char *buf;
   int errn;
+
+  opts = malloc(sizeof(DecoderOpts));
 
   // Intermediate decoding data.
   ERL_NIF_TERM tmp;
 
+  // Stream opts
   enif_get_map_value(env, argv[0], enif_make_atom(env, "codec_id"), &tmp);
-  enif_get_int(env, tmp, &codec_id);
+  enif_get_int(env, tmp, &opts->codec_id);
 
   enif_get_map_value(env, argv[0], enif_make_atom(env, "timebase_num"), &tmp);
-  enif_get_int(env, tmp, &timebase.num);
+  enif_get_int(env, tmp, &opts->timebase.num);
 
   enif_get_map_value(env, argv[0], enif_make_atom(env, "timebase_den"), &tmp);
-  enif_get_int(env, tmp, &timebase.den);
+  enif_get_int(env, tmp, &opts->timebase.den);
 
   enif_get_map_value(env, argv[0], enif_make_atom(env, "codec_params"), &tmp);
-  enif_get_codec_params(env, tmp, &params);
+  enif_get_codec_params(env, tmp, &opts->params);
 
-  if ((errn = decoder_alloc(&ctx, (enum AVCodecID)codec_id, params, timebase)) <
-      0)
+  // Output opts
+  enif_get_map_value(env, argv[1], enif_make_atom(env, "sample_rate"), &tmp);
+  enif_get_int(env, tmp, &opts->output_opts.sample_rate);
+
+  enif_get_map_value(env, argv[1], enif_make_atom(env, "channels"), &tmp);
+  enif_get_int(env, tmp, &opts->output_opts.channels);
+
+  enif_get_map_value(env, argv[1], enif_make_atom(env, "sample_format"), &tmp);
+  buf = malloc(buf_size);
+  enif_get_string(env, tmp, buf, buf_size, ERL_NIF_LATIN1);
+  opts->output_opts.sample_format = av_get_sample_fmt(buf);
+
+  if ((errn = decoder_alloc(&ctx, *opts)) < 0)
     return enif_make_av_error(env, errn);
+
+  free(buf);
+  free(opts);
 
   // Make the resource take ownership on the context.
   Decoder **ctx_res = enif_alloc_resource(DECODER_RES_TYPE, sizeof(Decoder *));
@@ -269,7 +278,7 @@ ERL_NIF_TERM enif_decoder_alloc(ErlNifEnv *env, int argc,
   // of freeing this resource when needed.
   enif_release_resource(ctx_res);
 
-  return term;
+  return enif_make_tuple2(env, enif_make_atom(env, "ok"), term);
 }
 
 ERL_NIF_TERM enif_decoder_stream_format(ErlNifEnv *env, int argc,
@@ -295,7 +304,8 @@ ERL_NIF_TERM enif_decoder_stream_format(ErlNifEnv *env, int argc,
                       enif_make_int(env, ctx->codec_ctx->sample_rate), &map);
     enif_make_map_put(
         env, map, enif_make_atom(env, "sample_format"),
-        enif_make_string(env, av_get_sample_fmt_name(ctx->output_sample_format),
+        enif_make_string(env,
+                         av_get_sample_fmt_name(ctx->output_fmt->sample_format),
                          ERL_NIF_UTF8),
         &map);
   }
@@ -391,7 +401,7 @@ ERL_NIF_TERM enif_audio_frame_unpack(ErlNifEnv *env, int argc,
   // but this is what our decoder is providing.
 
   // TODO
-  // move this code iside the demuxer.
+  // move this code iside the decoder.
 
   size_t size = av_samples_get_buffer_size(NULL, frame->ch_layout.nb_channels,
                                            frame->nb_samples, frame->format, 1);
@@ -422,18 +432,15 @@ int load(ErlNifEnv *env, void **priv_data, ERL_NIF_TERM load_info) {
   av_log_set_level(AV_LOG_QUIET);
 
   int flags = ERL_NIF_RT_CREATE | ERL_NIF_RT_TAKEOVER;
+
   DEMUXER_RES_TYPE = enif_open_resource_type(env, NULL, "demuxer",
                                              enif_free_demuxer, flags, NULL);
-
   CODEC_PARAMS_RES_TYPE = enif_open_resource_type(
       env, NULL, "codec_params", enif_free_codec_params, flags, NULL);
-
   DECODER_RES_TYPE = enif_open_resource_type(env, NULL, "decoder",
                                              enif_free_decoder, flags, NULL);
-
   PACKET_RES_TYPE = enif_open_resource_type(env, NULL, "packet",
                                             enif_free_packet, flags, NULL);
-
   FRAME_RES_TYPE =
       enif_open_resource_type(env, NULL, "frame", enif_free_frame, flags, NULL);
 
@@ -451,7 +458,7 @@ static ErlNifFunc nif_funcs[] = {
     {"demuxer_streams", 1, enif_demuxer_streams},
     {"demuxer_read_packet", 1, enif_demuxer_read_packet},
     // // Decoder
-    {"decoder_alloc", 1, enif_decoder_alloc},
+    {"decoder_alloc", 2, enif_decoder_alloc},
     {"decoder_stream_format", 1, enif_decoder_stream_format},
     {"decoder_add_data", 2, enif_decoder_add_data},
     // // General

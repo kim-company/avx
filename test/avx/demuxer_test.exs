@@ -28,7 +28,7 @@ defmodule AVx.DemuxerTest do
       {:ok, demuxer} = Demuxer.new_from_file(input_path)
       streams = Demuxer.read_streams(demuxer)
 
-      stream = Enum.find(streams, fn stream -> stream.codec_type == :audio end)
+      stream = Enum.find(streams, fn stream -> Demuxer.stream_type(stream) == :audio end)
 
       info = Support.show_packets(@input)
       assert_packets(demuxer, [stream.stream_index], info)

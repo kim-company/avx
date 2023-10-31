@@ -16,16 +16,18 @@ defmodule AVx.DecoderTest do
     test "extract audio track from #{input}" do
       {:ok, demuxer} = Demuxer.new_from_file(unquote(input))
       streams = Demuxer.read_streams(demuxer)
-
-      assert stream =
-               %{codec_type: :audio} =
-               Enum.find(streams, fn stream -> stream.codec_type == :audio end)
+      assert stream = Enum.find(streams, fn stream -> Demuxer.stream_type(stream) == :audio end)
 
       packets = Demuxer.consume_packets(demuxer, [stream.stream_index])
-      decoder = Decoder.new!(stream)
 
-      assert %{channels: _, sample_rate: 48000, sample_format: "flt"} =
-               Decoder.stream_format(decoder)
+      output_format = %{
+        sample_rate: stream.sample_rate,
+        channels: stream.channels,
+        sample_format: "flt"
+      }
+
+      {:ok, decoder} = Decoder.new(stream, output_format)
+      assert ^output_format = Decoder.stream_format(decoder)
 
       info = Support.show_frames(unquote(input))
       assert_frames(packets, decoder, info, Path.extname(unquote(input)))

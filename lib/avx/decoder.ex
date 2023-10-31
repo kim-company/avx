@@ -12,12 +12,22 @@ defmodule AVx.Decoder do
   @type t :: %__MODULE__{decoder: reference(), stream: AVx.Demuxer.stream()}
   defstruct [:decoder, :stream]
 
-  @spec new!(AVx.Demuxer.stream()) :: t()
-  def new!(stream) do
-    %__MODULE__{
-      decoder: NIF.decoder_alloc(stream),
-      stream: stream
-    }
+  @spec new(AVx.Demuxer.stream(), stream_format()) :: {:ok, t()} | {:error, binary()}
+  def new(stream, output_format) do
+    output_format = Map.update!(output_format, :sample_format, &to_charlist/1)
+
+    case NIF.decoder_alloc(stream, output_format) do
+      {:ok, decoder} ->
+        decoder = %__MODULE__{
+          decoder: decoder,
+          stream: stream
+        }
+
+        {:ok, decoder}
+
+      {:error, error} ->
+        {:error, to_string(error)}
+    end
   end
 
   @spec stream_format(t()) :: stream_format()
