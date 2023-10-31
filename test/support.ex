@@ -19,7 +19,7 @@ defmodule Support do
   end
 end
 
-defmodule Support.TiHandler do
+defmodule Support.Handler do
   use ThousandIsland.Handler
 
   @impl ThousandIsland.Handler

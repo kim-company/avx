@@ -14,7 +14,7 @@ defmodule AVx.DemuxerTest do
       pid =
         start_link_supervised!(
           {ThousandIsland,
-           [port: 0, handler_module: Support.TiHandler, handler_options: %{path: @input}]}
+           [port: 0, handler_module: Support.Handler, handler_options: %{path: @input}]}
         )
 
       {:ok, {_, port}} = ThousandIsland.listener_info(pid)
