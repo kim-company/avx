@@ -18,30 +18,18 @@ int is_planar(enum AVSampleFormat fmt) {
   }
 }
 
-int alloc_resampler(Decoder *ctx, FormatOpts output_opts) {
-  AVChannelLayout *output_layout;
+int alloc_resampler(Decoder *ctx) {
   AVCodecContext *codec_ctx;
   int errn;
 
   codec_ctx = ctx->codec_ctx;
 
-  output_layout = malloc(sizeof(AVChannelLayout));
-  av_channel_layout_copy(output_layout, &ctx->codec_ctx->ch_layout);
-  output_layout->nb_channels = output_opts.channels;
-
-  ctx->output_ch_layout = output_layout;
-
-  output_opts.sample_format =
-      av_get_packed_sample_fmt(output_opts.sample_format);
-
-  if ((errn = swr_alloc_set_opts2(
-           &(ctx->resampler_ctx), output_layout, output_opts.sample_format,
-           output_opts.sample_rate, &codec_ctx->ch_layout,
-           codec_ctx->sample_fmt, codec_ctx->sample_rate, 0, NULL)) != 0)
+  if ((errn = swr_alloc_set_opts2(&(ctx->resampler_ctx), ctx->output.ch_layout,
+                                  ctx->output.sample_format,
+                                  ctx->output.sample_rate,
+                                  &codec_ctx->ch_layout, codec_ctx->sample_fmt,
+                                  codec_ctx->sample_rate, 0, NULL)) != 0)
     return errn;
-
-  ctx->output_fmt = malloc(sizeof(FormatOpts));
-  *ctx->output_fmt = output_opts;
 
   return swr_init(ctx->resampler_ctx);
 }
@@ -65,7 +53,16 @@ int decoder_alloc(Decoder **ctx, DecoderOpts opts) {
 
   ictx = (Decoder *)malloc(sizeof(Decoder));
   ictx->codec_ctx = codec_ctx;
-  if ((errn = alloc_resampler(ictx, opts.output_opts)) < 0)
+  ictx->output.ch_layout = malloc(sizeof(AVChannelLayout));
+  av_channel_layout_copy(ictx->output.ch_layout, &codec_ctx->ch_layout);
+  ictx->output.ch_layout->nb_channels = opts.output.nb_channels;
+  ictx->output.sample_rate = opts.output.sample_rate;
+  // Planar formats are not supported as they require a different procedure to
+  // lay down the plain bits contained in their frames.
+  ictx->output.sample_format =
+      av_get_packed_sample_fmt(opts.output.sample_format);
+
+  if ((errn = alloc_resampler(ictx)) < 0)
     return errn;
 
   *ctx = ictx;
@@ -88,9 +85,9 @@ int decoder_read_frame(Decoder *ctx, AVFrame *frame) {
     AVFrame *resampled_frame;
     resampled_frame = av_frame_alloc();
     resampled_frame->nb_samples = frame->nb_samples;
-    resampled_frame->ch_layout = *ctx->output_ch_layout;
-    resampled_frame->sample_rate = frame->sample_rate;
-    resampled_frame->format = ctx->output_fmt->sample_format;
+    resampled_frame->ch_layout = *ctx->output.ch_layout;
+    resampled_frame->sample_rate = ctx->output.sample_rate;
+    resampled_frame->format = ctx->output.sample_format;
 
     if ((errn = av_frame_get_buffer(resampled_frame, 0)) != 0)
       return errn;
@@ -110,9 +107,10 @@ int decoder_read_frame(Decoder *ctx, AVFrame *frame) {
 
 int decoder_free(Decoder **ctx) {
   avcodec_free_context(&(*ctx)->codec_ctx);
+
   if ((*ctx)->resampler_ctx) {
     swr_free(&(*ctx)->resampler_ctx);
-    free((*ctx)->output_fmt);
+    av_channel_layout_uninit((*ctx)->output.ch_layout);
   }
 
   free(*ctx);

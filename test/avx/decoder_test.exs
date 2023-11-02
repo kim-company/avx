@@ -34,6 +34,28 @@ defmodule AVx.DecoderTest do
     end
   end
 
+  test "decodes into a different format" do
+    {:ok, demuxer} = Demuxer.new_from_file(List.first(@inputs))
+    [aac] = Demuxer.read_streams(demuxer)
+    packets = Demuxer.consume_packets(demuxer, [aac.stream_index])
+
+    output_format = %{
+      sample_rate: 128_000,
+      channels: 1,
+      sample_format: "s16"
+    }
+
+    {:ok, decoder} = Decoder.new(aac, output_format)
+    assert ^output_format = Decoder.stream_format(decoder)
+
+    frame_count =
+      packets
+      |> Decoder.decode_frames(decoder)
+      |> Enum.count()
+
+    assert frame_count == 564
+  end
+
   defp assert_frames(packets, decoder, expected_frames, ext) do
     count =
       packets

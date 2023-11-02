@@ -1,20 +1,18 @@
 #include "libavcodec/codec_par.h"
+#include "libavutil/channel_layout.h"
 #include "libavutil/samplefmt.h"
 #include "libswresample/swresample.h"
 #include <libavcodec/avcodec.h>
 
 typedef struct {
-  int sample_rate;
-  int channels;
-  enum AVSampleFormat sample_format;
-} FormatOpts;
-
-typedef struct {
   AVCodecContext *codec_ctx;
   SwrContext *resampler_ctx;
 
-  FormatOpts *output_fmt;
-  AVChannelLayout *output_ch_layout;
+  struct {
+    int sample_rate;
+    enum AVSampleFormat sample_format;
+    AVChannelLayout *ch_layout;
+  } output;
 } Decoder;
 
 typedef struct {
@@ -22,7 +20,11 @@ typedef struct {
   AVCodecParameters *params;
   AVRational timebase;
 
-  FormatOpts output_opts;
+  struct {
+    int sample_rate;
+    int nb_channels;
+    enum AVSampleFormat sample_format;
+  } output;
 } DecoderOpts;
 
 int decoder_alloc(Decoder **ctx, DecoderOpts opts);

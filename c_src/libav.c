@@ -229,6 +229,7 @@ ERL_NIF_TERM enif_decoder_alloc(ErlNifEnv *env, int argc,
   Decoder *ctx;
   DecoderOpts *opts;
   int buf_size = 256;
+  int nb_channels;
   char *buf;
   int errn;
 
@@ -252,15 +253,15 @@ ERL_NIF_TERM enif_decoder_alloc(ErlNifEnv *env, int argc,
 
   // Output opts
   enif_get_map_value(env, argv[1], enif_make_atom(env, "sample_rate"), &tmp);
-  enif_get_int(env, tmp, &opts->output_opts.sample_rate);
+  enif_get_int(env, tmp, &opts->output.sample_rate);
 
   enif_get_map_value(env, argv[1], enif_make_atom(env, "channels"), &tmp);
-  enif_get_int(env, tmp, &opts->output_opts.channels);
+  enif_get_int(env, tmp, &opts->output.nb_channels);
 
   enif_get_map_value(env, argv[1], enif_make_atom(env, "sample_format"), &tmp);
   buf = malloc(buf_size);
   enif_get_string(env, tmp, buf, buf_size, ERL_NIF_LATIN1);
-  opts->output_opts.sample_format = av_get_sample_fmt(buf);
+  opts->output.sample_format = av_get_sample_fmt(buf);
 
   if ((errn = decoder_alloc(&ctx, *opts)) < 0)
     return enif_make_av_error(env, errn);
@@ -298,14 +299,13 @@ ERL_NIF_TERM enif_decoder_stream_format(ErlNifEnv *env, int argc,
   if (ctx->codec_ctx->codec_type == AVMEDIA_TYPE_AUDIO) {
 
     enif_make_map_put(env, map, enif_make_atom(env, "channels"),
-                      enif_make_int(env, ctx->codec_ctx->ch_layout.nb_channels),
+                      enif_make_int(env, ctx->output.ch_layout->nb_channels),
                       &map);
     enif_make_map_put(env, map, enif_make_atom(env, "sample_rate"),
-                      enif_make_int(env, ctx->codec_ctx->sample_rate), &map);
+                      enif_make_int(env, ctx->output.sample_rate), &map);
     enif_make_map_put(
         env, map, enif_make_atom(env, "sample_format"),
-        enif_make_string(env,
-                         av_get_sample_fmt_name(ctx->output_fmt->sample_format),
+        enif_make_string(env, av_get_sample_fmt_name(ctx->output.sample_format),
                          ERL_NIF_UTF8),
         &map);
   }
