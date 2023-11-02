@@ -14,6 +14,7 @@ typedef struct {
   SwrContext *resampler_ctx;
 
   FormatOpts *output_fmt;
+  AVChannelLayout *output_ch_layout;
 } Decoder;
 
 typedef struct {

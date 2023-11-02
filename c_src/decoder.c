@@ -27,11 +27,10 @@ int alloc_resampler(Decoder *ctx, FormatOpts output_opts) {
 
   output_layout = malloc(sizeof(AVChannelLayout));
   av_channel_layout_copy(output_layout, &ctx->codec_ctx->ch_layout);
-
-  // TODO
-  // free(output_layout);
-
   output_layout->nb_channels = output_opts.channels;
+
+  ctx->output_ch_layout = output_layout;
+
   output_opts.sample_format =
       av_get_packed_sample_fmt(output_opts.sample_format);
 
@@ -89,7 +88,7 @@ int decoder_read_frame(Decoder *ctx, AVFrame *frame) {
     AVFrame *resampled_frame;
     resampled_frame = av_frame_alloc();
     resampled_frame->nb_samples = frame->nb_samples;
-    resampled_frame->ch_layout = frame->ch_layout;
+    resampled_frame->ch_layout = *ctx->output_ch_layout;
     resampled_frame->sample_rate = frame->sample_rate;
     resampled_frame->format = ctx->output_fmt->sample_format;
 
