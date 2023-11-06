@@ -455,18 +455,22 @@ static ErlNifFunc nif_funcs[] = {
     // Demuxer
     {"demuxer_alloc_from_file", 1, enif_demuxer_alloc_from_file,
      ERL_NIF_DIRTY_JOB_IO_BOUND},
-    {"demuxer_streams", 1, enif_demuxer_streams},
-    {"demuxer_read_packet", 1, enif_demuxer_read_packet},
+    {"demuxer_streams", 1, enif_demuxer_streams, ERL_NIF_DIRTY_JOB_IO_BOUND},
+    {"demuxer_read_packet", 1, enif_demuxer_read_packet,
+     ERL_NIF_DIRTY_JOB_IO_BOUND},
     // // Decoder
-    {"decoder_alloc", 2, enif_decoder_alloc},
-    {"decoder_stream_format", 1, enif_decoder_stream_format},
-    {"decoder_add_data", 2, enif_decoder_add_data},
+    {"decoder_alloc", 2, enif_decoder_alloc, ERL_NIF_DIRTY_JOB_IO_BOUND},
+    {"decoder_stream_format", 1, enif_decoder_stream_format,
+     ERL_NIF_DIRTY_JOB_IO_BOUND},
+    {"decoder_add_data", 2, enif_decoder_add_data, ERL_NIF_DIRTY_JOB_IO_BOUND},
     // // General
-    {"packet_stream_index", 1, enif_packet_stream_index},
+    {"packet_stream_index", 1, enif_packet_stream_index,
+     ERL_NIF_DIRTY_JOB_IO_BOUND},
     // // TODO
     // // Maybe unpack_* would be better function naming.
-    {"packet_unpack", 1, enif_packet_unpack},
-    {"audio_frame_unpack", 1, enif_audio_frame_unpack},
+    {"packet_unpack", 1, enif_packet_unpack, ERL_NIF_DIRTY_JOB_IO_BOUND},
+    {"audio_frame_unpack", 1, enif_audio_frame_unpack,
+     ERL_NIF_DIRTY_JOB_IO_BOUND},
 };
 
 ERL_NIF_INIT(Elixir.AVx.NIF, nif_funcs, load, NULL, NULL, NULL)
