@@ -41,7 +41,8 @@ int decoder_alloc(Decoder **ctx, DecoderOpts opts) {
   int errn;
 
   codec = avcodec_find_decoder((enum AVCodecID)opts.codec_id);
-  codec_ctx = avcodec_alloc_context3(codec);
+  if (!(codec_ctx = avcodec_alloc_context3(codec)))
+    return AVERROR(ENOMEM);
 
   if ((errn = avcodec_parameters_to_context(codec_ctx, opts.params)) < 0)
     return errn;
@@ -51,9 +52,13 @@ int decoder_alloc(Decoder **ctx, DecoderOpts opts) {
 
   codec_ctx->pkt_timebase = opts.timebase;
 
-  ictx = (Decoder *)malloc(sizeof(Decoder));
+  if (!(ictx = (Decoder *)malloc(sizeof(Decoder))))
+    return AVERROR(ENOMEM);
+
   ictx->codec_ctx = codec_ctx;
-  ictx->output.ch_layout = malloc(sizeof(AVChannelLayout));
+  if (!(ictx->output.ch_layout = malloc(sizeof(AVChannelLayout))))
+    return AVERROR(ENOMEM);
+
   av_channel_layout_copy(ictx->output.ch_layout, &codec_ctx->ch_layout);
   ictx->output.ch_layout->nb_channels = opts.output.nb_channels;
   ictx->output.sample_rate = opts.output.sample_rate;
@@ -83,7 +88,9 @@ int decoder_read_frame(Decoder *ctx, AVFrame *frame) {
     int next_pts = swr_next_pts(ctx->resampler_ctx, frame->pts);
 
     AVFrame *resampled_frame;
-    resampled_frame = av_frame_alloc();
+    if (!(resampled_frame = av_frame_alloc()))
+      return AVERROR(ENOMEM);
+
     resampled_frame->nb_samples = frame->nb_samples;
     resampled_frame->ch_layout = *ctx->output.ch_layout;
     resampled_frame->sample_rate = ctx->output.sample_rate;

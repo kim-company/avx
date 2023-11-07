@@ -1,3 +1,4 @@
+#include "libavutil/frame.h"
 #include "libavutil/samplefmt.h"
 #include <decoder.h>
 #include <demuxer.h>
@@ -86,7 +87,8 @@ ERL_NIF_TERM enif_demuxer_read_packet(ErlNifEnv *env, int argc,
   AVPacket *packet;
   int ret;
 
-  packet = av_packet_alloc();
+  if (!(packet = av_packet_alloc()))
+    return enif_make_av_error(env, AVERROR(ENOMEM));
 
   enif_get_demuxer(env, argv[0], &ctx);
 
@@ -344,16 +346,20 @@ ERL_NIF_TERM enif_decoder_add_data(ErlNifEnv *env, int argc,
     return enif_make_av_error(env, errn);
 
   list = enif_make_list(env, 0);
-  frame = av_frame_alloc();
+  if (!(frame = av_frame_alloc()))
+    return enif_make_av_error(env, AVERROR(ENOMEM));
+
   while ((errn = decoder_read_frame(ctx, frame)) == 0) {
-    AVFrame *oframe;
-    oframe = av_frame_alloc();
-    av_frame_ref(oframe, frame);
+    int errn;
+    AVFrame **frame_res;
 
     // Make the resource take ownership on the context.
-    AVFrame **frame_res =
-        enif_alloc_resource(FRAME_RES_TYPE, sizeof(AVFrame *));
-    *frame_res = oframe;
+    if (!(frame_res = enif_alloc_resource(FRAME_RES_TYPE, sizeof(AVFrame *))))
+      return enif_make_av_error(env, AVERROR(ENOMEM));
+
+    *frame_res = av_frame_alloc();
+    if ((errn = av_frame_ref(*frame_res, frame) < 0))
+      return enif_make_av_error(env, errn);
 
     ERL_NIF_TERM term = enif_make_resource(env, frame_res);
 

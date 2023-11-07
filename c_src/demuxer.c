@@ -7,14 +7,18 @@ int demuxer_alloc_from_file(Demuxer **ctx, char *path) {
   Demuxer *demuxer;
   int errn;
 
-  fmt_ctx = avformat_alloc_context();
+  if (!(fmt_ctx = avformat_alloc_context()))
+    return AVERROR(ENOMEM);
+
   if ((errn = avformat_open_input(&fmt_ctx, path, NULL, NULL)) < 0)
     return errn;
 
   if ((errn = avformat_find_stream_info(fmt_ctx, NULL)) < 0)
     goto fail;
 
-  demuxer = (Demuxer *)malloc(sizeof(Demuxer));
+  if (!(demuxer = (Demuxer *)malloc(sizeof(Demuxer))))
+    return AVERROR(ENOMEM);
+
   demuxer->fmt_ctx = fmt_ctx;
   *ctx = demuxer;
   return 0;
