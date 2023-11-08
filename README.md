@@ -2,7 +2,6 @@
 [![Elixir CI](https://github.com/kim-company/avx/actions/workflows/elixir.yml/badge.svg)](https://github.com/kim-company/avx/actions/workflows/elixir.yml)
 
 
-
 Audio/Video Elixir. This is a libav (NIF) backed library for dealing with audio/video files. Takes
 a functional approach allowing users to decide which runtime they want to design.
 
@@ -17,13 +16,15 @@ def deps do
 end
 ```
 
-Also, you need ffmpeg's libraries on your machine. `pkg-config` is used to find them.
+## Requirements
+* ffmpeg's libraries. `pkg-config` is used to find them. On macos `brew install ffmpeg`, debian sid `apt-get install -y -t sid pkg-config libfdk-aac-dev libavutil-dev libavcodec-dev libavformat-dev libavutil-dev libswresample-dev` (bullseye has an older version of libav* libs that are incompatible, sorry).
+* You need `OTP >= 26.0.3` (we hit https://github.com/erlang/otp/issues/7292, believe it or not)
 
 ## Features
 - [x] demux any audio/video container (mp4, ogg, mkv, ...)
 - [x] decode audio files
-- [ ] mux streams
 - [ ] decode video files (in theory we should already be there, in practise the stream format for videos is not implemented and neither is the Frame "unpacking")
+- [ ] mux streams
 
 In the future it will support also encoding and muxing, in this order.
 
@@ -74,6 +75,7 @@ This library is suitable as standalone or inside the elements of a [membrane](ht
 pipeline for more complex setups (video mixers with dynamic inputs, WebRTC rooms, ...)
 
 ## Debugging
+### Cocoa's way
 This library works with NIFs. When things go wrong, the BEAM exits!
 The idea is to run the `mix test` loop inside a debugger, in my case `lldb`.
 
@@ -82,6 +84,16 @@ To run the tests under the debugger, `lldb -- $ERLEXEC $CMD_ARGS test`.
 
 Usually I either let the test crash and then `bt` to have an overview of the stack, `f <frame number>` to select the frame I want to inspect,
 the `v <variable name>` to check the contents of the variable. Otherwise put a breakpoint with `br s -l <line number> -f libav.c`.
+
+### OTP way
+You can achieve the same result as above by:
+* compiling the BEAM with debugging support
+* source the DEBUG.fish file. Substitute ERL_BASE with the base path of your "debug" OTP repo
+* run the debugger with `$ERL_BASE/cerl -lldb $CMD_ARGS test`
+
+A pro is that if you manage to achieve this, you'll also have the option of
+starting the BEAM in debug mode, which is the recommeneded VM you are supposed
+to use when developing NIFs.
 
 ## Performance
 Nothing serious in here for now, but to give an idea:
@@ -97,6 +109,7 @@ Nothing serious in here for now, but to give an idea:
 - https://www.erlang.org/doc/man/erl_nif
 - https://lldb.llvm.org/use/map.html#breakpoint-commands
 - https://github.com/membraneframework
+- https://www.erlang.org/doc/tutorial/debugging.html
 
 ## Copyright and License
 Copyright 2023, [KIM Keep In Mind GmbH](https://www.keepinmind.info/)
