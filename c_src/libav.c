@@ -218,6 +218,8 @@ ERL_NIF_TERM enif_packet_metadata(ErlNifEnv *env, int argc,
                     enif_make_long(env, packet->pts), &map);
   enif_make_map_put(env, map, enif_make_atom(env, "dts"),
                     enif_make_long(env, packet->dts), &map);
+  enif_make_map_put(env, map, enif_make_atom(env, "size"),
+                    enif_make_long(env, packet->size), &map);
   enif_make_map_put(env, map, enif_make_atom(env, "stream_index"),
                     enif_make_int(env, packet->stream_index), &map);
 

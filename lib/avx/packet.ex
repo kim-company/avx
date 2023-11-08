@@ -2,12 +2,13 @@ defmodule AVx.Packet do
   @type t :: %__MODULE__{
           ref: reference(),
           payload: nil | binary(),
+          size: pos_integer(),
           stream_index: pos_integer(),
           pts: pos_integer(),
           dts: pos_integer()
         }
 
-  defstruct ref: nil, payload: nil, stream_index: -1, pts: -1, dts: -1
+  defstruct ref: nil, payload: nil, size: 0, stream_index: -1, pts: -1, dts: -1
 
   @spec new(reference()) :: t()
   def new(nil) do
@@ -16,7 +17,14 @@ defmodule AVx.Packet do
 
   def new(ref) do
     meta = AVx.NIF.packet_metadata(ref)
-    %__MODULE__{ref: ref, stream_index: meta.stream_index, pts: meta.pts, dts: meta.dts}
+
+    %__MODULE__{
+      ref: ref,
+      size: meta.size,
+      stream_index: meta.stream_index,
+      pts: meta.pts,
+      dts: meta.dts
+    }
   end
 
   @spec unpack(t()) :: t()
