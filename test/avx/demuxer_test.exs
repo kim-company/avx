@@ -44,7 +44,7 @@ defmodule AVx.DemuxerTest do
         |> Enum.reduce(0, fn {have, want}, count ->
           assert have.pts == Map.fetch!(want, "pts")
           assert have.dts == Map.fetch!(want, "dts")
-          assert byte_size(have.data) == Map.fetch!(want, "size") |> String.to_integer()
+          assert byte_size(have.payload) == Map.fetch!(want, "size") |> String.to_integer()
           count + 1
         end)
 

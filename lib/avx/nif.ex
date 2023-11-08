@@ -30,8 +30,8 @@ defmodule AVx.NIF do
     raise "NIF decoder_stream_format/1 not implemented"
   end
 
-  def packet_stream_index(_packet) do
-    raise "NIF packet_stream_index/1 not implemented"
+  def packet_metadata(_packet) do
+    raise "NIF packet_metadata/1 not implemented"
   end
 
   def packet_unpack(_packet) do

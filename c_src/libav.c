@@ -197,19 +197,29 @@ int enif_get_packet(ErlNifEnv *env, ERL_NIF_TERM term, AVPacket **packet) {
 ERL_NIF_TERM enif_packet_unpack(ErlNifEnv *env, int argc,
                                 const ERL_NIF_TERM argv[]) {
   AVPacket *packet;
-  ERL_NIF_TERM map, data;
+  ERL_NIF_TERM data;
 
   enif_get_packet(env, argv[0], &packet);
 
   void *ptr = enif_make_new_binary(env, packet->size, &data);
   memcpy(ptr, packet->data, packet->size);
 
+  return data;
+}
+
+ERL_NIF_TERM enif_packet_metadata(ErlNifEnv *env, int argc,
+                                  const ERL_NIF_TERM argv[]) {
+  AVPacket *packet;
+  ERL_NIF_TERM map;
+  enif_get_packet(env, argv[0], &packet);
+
   map = enif_make_new_map(env);
   enif_make_map_put(env, map, enif_make_atom(env, "pts"),
                     enif_make_long(env, packet->pts), &map);
   enif_make_map_put(env, map, enif_make_atom(env, "dts"),
                     enif_make_long(env, packet->dts), &map);
-  enif_make_map_put(env, map, enif_make_atom(env, "data"), data, &map);
+  enif_make_map_put(env, map, enif_make_atom(env, "stream_index"),
+                    enif_make_int(env, packet->stream_index), &map);
 
   return map;
 }
@@ -313,13 +323,6 @@ ERL_NIF_TERM enif_decoder_stream_format(ErlNifEnv *env, int argc,
   }
 
   return map;
-}
-
-ERL_NIF_TERM enif_packet_stream_index(ErlNifEnv *env, int argc,
-                                      const ERL_NIF_TERM argv[]) {
-  AVPacket *packet;
-  enif_get_packet(env, argv[0], &packet);
-  return enif_make_int(env, packet->stream_index);
 }
 
 ERL_NIF_TERM enif_decoder_add_data(ErlNifEnv *env, int argc,
@@ -470,8 +473,7 @@ static ErlNifFunc nif_funcs[] = {
      ERL_NIF_DIRTY_JOB_IO_BOUND},
     {"decoder_add_data", 2, enif_decoder_add_data, ERL_NIF_DIRTY_JOB_IO_BOUND},
     // // General
-    {"packet_stream_index", 1, enif_packet_stream_index,
-     ERL_NIF_DIRTY_JOB_IO_BOUND},
+    {"packet_metadata", 1, enif_packet_metadata, ERL_NIF_DIRTY_JOB_IO_BOUND},
     // // TODO
     // // Maybe unpack_* would be better function naming.
     {"packet_unpack", 1, enif_packet_unpack, ERL_NIF_DIRTY_JOB_IO_BOUND},
