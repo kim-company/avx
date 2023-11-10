@@ -37,7 +37,7 @@ void enif_get_demuxer(ErlNifEnv *env, ERL_NIF_TERM term, Demuxer **ctx) {
 
 ERL_NIF_TERM enif_make_error(ErlNifEnv *env, char *err) {
   return enif_make_tuple2(env, enif_make_atom(env, "error"),
-                          enif_make_string(env, err, ERL_NIF_UTF8));
+                          enif_make_string(env, err, ERL_NIF_LATIN1));
 }
 
 ERL_NIF_TERM enif_make_av_error(ErlNifEnv *env, int errn) {
@@ -146,7 +146,7 @@ ERL_NIF_TERM enif_make_stream_map(ErlNifEnv *env, AVStream *stream) {
   enif_make_map_put(env, map, enif_make_atom(env, "codec_type"),
                     enif_make_int(env, params->codec_type), &map);
   enif_make_map_put(env, map, enif_make_atom(env, "codec_name"),
-                    enif_make_string(env, codec_name, ERL_NIF_UTF8), &map);
+                    enif_make_string(env, codec_name, ERL_NIF_LATIN1), &map);
   enif_make_map_put(env, map, enif_make_atom(env, "codec_params"),
                     enif_make_resource(env, codec_params_res), &map);
 
@@ -156,7 +156,7 @@ ERL_NIF_TERM enif_make_stream_map(ErlNifEnv *env, AVStream *stream) {
   enif_make_map_put(env, map, enif_make_atom(env, "sample_rate"),
                     enif_make_int(env, params->sample_rate), &map);
   enif_make_map_put(env, map, enif_make_atom(env, "sample_format"),
-                    enif_make_string(env, sample_fmt, ERL_NIF_UTF8), &map);
+                    enif_make_string(env, sample_fmt, ERL_NIF_LATIN1), &map);
 
   // This is done to allow the erlang garbage collector to take care
   // of freeing this resource when needed.
@@ -320,7 +320,7 @@ ERL_NIF_TERM enif_decoder_stream_format(ErlNifEnv *env, int argc,
     enif_make_map_put(
         env, map, enif_make_atom(env, "sample_format"),
         enif_make_string(env, av_get_sample_fmt_name(ctx->output.sample_format),
-                         ERL_NIF_UTF8),
+                         ERL_NIF_LATIN1),
         &map);
   }
 
