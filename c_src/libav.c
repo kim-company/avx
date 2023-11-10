@@ -430,12 +430,12 @@ ERL_NIF_TERM enif_audio_frame_unpack(ErlNifEnv *env, int argc,
 
 void enif_free_packet(ErlNifEnv *env, void *res) {
   AVPacket **packet = (AVPacket **)res;
-  av_packet_unref(*packet);
+  av_packet_free(packet);
 }
 
 void enif_free_frame(ErlNifEnv *env, void *res) {
   AVFrame **frame = (AVFrame **)res;
-  av_frame_unref(*frame);
+  av_frame_free(frame);
 }
 
 // Called when the nif is loaded, as specified in the ERL_NIF_INIT call.
