@@ -350,6 +350,9 @@ ERL_NIF_TERM enif_decoder_add_data(ErlNifEnv *env, int argc,
   if ((errn = decoder_send_packet(ctx, packet)) != 0)
     return enif_make_av_error(env, errn);
 
+  if (packet)
+    av_packet_unref(packet);
+
   list = enif_make_list(env, 0);
   if (!(frame = av_frame_alloc()))
     return enif_make_av_error(env, AVERROR(ENOMEM));
@@ -376,7 +379,7 @@ ERL_NIF_TERM enif_decoder_add_data(ErlNifEnv *env, int argc,
     // Reset the frame to reuse it for the next decode round.
     av_frame_unref(frame);
   }
-  av_frame_unref(frame);
+  av_frame_free(&frame);
 
   switch (errn) {
   case 0:

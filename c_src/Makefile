@@ -4,7 +4,7 @@
 
 # This works on rtx enabled machines. It is for direct usage only (dev).
 ifndef ERTS_INCLUDE_DIR
-ERTS_INCLUDE_DIR := $(shell rtx where erlang)/erts-14.0.2/include
+ERTS_INCLUDE_DIR := $(shell rtx where erlang)/erts-14.1.1/include
 endif
 ifndef MIX_APP_PATH
 MIX_APP_PATH := ..

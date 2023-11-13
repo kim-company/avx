@@ -106,7 +106,8 @@ int decoder_read_frame(Decoder *ctx, AVFrame *frame) {
     resampled_frame->pts = next_pts;
 
     av_frame_unref(frame);
-    av_frame_ref(frame, resampled_frame);
+    av_frame_move_ref(frame, resampled_frame);
+    av_frame_free(&resampled_frame);
   }
 
   return 0;
