@@ -3,6 +3,7 @@
 #include "libavutil/samplefmt.h"
 #include "libswresample/swresample.h"
 #include <decoder.h>
+#include <libavutil/opt.h>
 
 int is_planar(enum AVSampleFormat fmt) {
   switch (fmt) {
@@ -20,18 +21,27 @@ int is_planar(enum AVSampleFormat fmt) {
 
 int alloc_resampler(Decoder *ctx) {
   AVCodecContext *codec_ctx;
+  SwrContext *swr_ctx;
   int errn;
 
   codec_ctx = ctx->codec_ctx;
+  if (!(swr_ctx = swr_alloc()))
+    return AVERROR(ENOMEM);
 
-  if ((errn = swr_alloc_set_opts2(&(ctx->resampler_ctx), ctx->output.ch_layout,
-                                  ctx->output.sample_format,
-                                  ctx->output.sample_rate,
-                                  &codec_ctx->ch_layout, codec_ctx->sample_fmt,
-                                  codec_ctx->sample_rate, 0, NULL)) != 0)
+  av_opt_set_chlayout(swr_ctx, "in_chlayout", &codec_ctx->ch_layout, 0);
+  av_opt_set_int(swr_ctx, "in_sample_rate", codec_ctx->sample_rate, 0);
+  av_opt_set_sample_fmt(swr_ctx, "in_sample_fmt", codec_ctx->sample_fmt, 0);
+
+  av_opt_set_chlayout(swr_ctx, "out_chlayout", ctx->output.ch_layout, 0);
+  av_opt_set_int(swr_ctx, "out_sample_rate", ctx->output.sample_rate, 0);
+  av_opt_set_sample_fmt(swr_ctx, "out_sample_fmt", ctx->output.sample_format,
+                        0);
+
+  if ((errn = swr_init(swr_ctx)) < 0)
     return errn;
 
-  return swr_init(ctx->resampler_ctx);
+  ctx->resampler_ctx = swr_ctx;
+  return errn;
 }
 
 int decoder_alloc(Decoder **ctx, DecoderOpts opts) {
