@@ -68,9 +68,8 @@ int decoder_alloc(Decoder **ctx, DecoderOpts opts) {
   ictx->codec_ctx = codec_ctx;
   if (!(ictx->output.ch_layout = malloc(sizeof(AVChannelLayout))))
     return AVERROR(ENOMEM);
+  av_channel_layout_default(ictx->output.ch_layout, opts.output.nb_channels);
 
-  av_channel_layout_copy(ictx->output.ch_layout, &codec_ctx->ch_layout);
-  ictx->output.ch_layout->nb_channels = opts.output.nb_channels;
   ictx->output.sample_rate = opts.output.sample_rate;
   // Planar formats are not supported as they require a different procedure to
   // lay down the plain bits contained in their frames.

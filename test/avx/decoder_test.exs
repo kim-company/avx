@@ -35,7 +35,8 @@ defmodule AVx.DecoderTest do
   end
 
   test "decodes into a different format" do
-    {:ok, demuxer} = Demuxer.new_from_file(List.first(@inputs))
+    # We use this file for testing as it is stereo, sample rate 97_000, format fltp
+    {:ok, demuxer} = Demuxer.new_from_file("test/data/packed.aac")
     [aac] = Demuxer.read_streams(demuxer)
     packets = Demuxer.consume_packets(demuxer, [aac.stream_index])
 
@@ -53,7 +54,7 @@ defmodule AVx.DecoderTest do
       |> Decoder.decode_frames(decoder)
       |> Enum.count()
 
-    assert frame_count == 564
+    assert frame_count == 283
   end
 
   defp assert_frames(packets, decoder, expected_frames, ext) do
