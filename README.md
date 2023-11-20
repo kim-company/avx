@@ -5,6 +5,9 @@
 Audio/Video Elixir. This is a libav (NIF) backed library for dealing with audio/video files. Takes
 a functional approach allowing users to decide which runtime they want to design.
 
+We use this library **in production** to demux/decode audio from the any browser's microphone to raw
+format for doing realtime transcriptions (whisper, APIs, ecc).
+
 ## Installation
 I'll publish it at some point if there is interest. For now,
 
@@ -21,22 +24,18 @@ end
 * You need `OTP >= 26.0.3` (we hit https://github.com/erlang/otp/issues/7292, believe it or not)
 
 ## Features
-- [x] demux any audio/video container (mp4, ogg, mkv, ...)
+- [x] demux any audio container (mp4, ogg, mkv, ...)
 - [x] decode audio files
-- [ ] decode video files (in theory we should already be there, in practise the stream format for videos is not implemented and neither is the Frame "unpacking")
-- [ ] mux streams
-
-In the future it will support also encoding and muxing, in this order.
 
 The term unpack is used here (probably incorrectly) to denote the action of
 copying the packet/frame out of the C world into Elixir.
 
 ## Before you start
-- It will probably crash your BEAM at some point, as error handling is far from being complete on the C side. It is already pretty stable though.
+- ~~It will probably crash your BEAM at some point, as error handling is far from being complete on the C side. It is already pretty stable though.~~
 
-- NIFs are supposed to return in <1ms, which does not happen for some functions. I still
+- ~~NIFs are supposed to return in <1ms, which does not happen for some functions. I still
 need to measure the impact and determine the dirty scheduler that should be picked for each
-function.
+function.~~
 
 ## Usage
 Check the tests, but in practice this is the flow for decoding audio from a
@@ -65,14 +64,15 @@ demuxer
 |> Enum.into(output)
 ```
 
-I'm currently working on a ThousandIsland Handler that can be used
-to create a Demuxer source suitable for streaming setups.
+To decode from a live session, use the ThousandIsland handler provided. It will
+give you a `tcp://` endpoint you can use as file source to the demuxer. It carries
+a little bit of overhead, but keeps the C side super simple.
 
 And that's it. Compared to using the `ffmpeg` executable directly, here you have access
 to every single packet, which you can re-route, manipulate and process at will.
 
 This library is suitable as standalone or inside the elements of a [membrane](https://github.com/membraneframework)
-pipeline for more complex setups (video mixers with dynamic inputs, WebRTC rooms, ...)
+pipeline for more complex setups.
 
 ## Debugging
 ### Cocoa's way
