@@ -21,7 +21,7 @@ end
 
 ## Requirements
 * ffmpeg's libraries. `pkg-config` is used to find them. On macos `brew install ffmpeg`, debian sid `apt-get install -y -t sid pkg-config libfdk-aac-dev libavutil-dev libavcodec-dev libavformat-dev libavutil-dev libswresample-dev` (bullseye has an older version of libav* libs that are incompatible, sorry).
-* You need `OTP >= 26.0.3` (we hit https://github.com/erlang/otp/issues/7292, believe it or not)
+* You need `OTP >= 26.0.3` or `OTP ~25` (we hit https://github.com/erlang/otp/issues/7292, believe it or not)
 
 ## Features
 - [x] demux any audio container (mp4, ogg, mkv, ...)
