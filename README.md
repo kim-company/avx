@@ -30,6 +30,11 @@ end
 The term unpack is used here (probably incorrectly) to denote the action of
 copying the packet/frame out of the C world into Elixir.
 
+We're not targetting video files anymore for now, as we're do not need a fully-fledged
+binding to ffmpeg at this time. If we're working with videos or complex setups, we're
+still either using membrane or ffmpeg as above, but we did not generalize anything to
+a library as of now.
+
 ## Before you start
 - ~~It will probably crash your BEAM at some point, as error handling is far from being complete on the C side. It is already pretty stable though.~~
 
